@@ -19,13 +19,15 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "adc.h"
+#include "dma.h"
 #include "tim.h"
 #include "usart.h"
 #include "gpio.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "motor.h"  /* 包含电机控制模块头文件 */
+#include "crsf.h"   /* 包含CRSF协议接收模块头文件 */
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -89,12 +91,22 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_ADC1_Init();
   MX_TIM3_Init();
   MX_USART1_UART_Init();
   MX_USART4_UART_Init();
   /* USER CODE BEGIN 2 */
-
+  
+  /* 初始化电机控制模块 */
+  MotorControl_Init();
+  
+  /* 初始化CRSF协议接收模块 */
+  CRSF_Init();
+  
+  /* 点亮LED指示灯，表示系统初始化完成 */
+  HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_SET);
+  
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -104,8 +116,16 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);  /* 翻转LED引脚电平，实现亮灭切换 */
-    HAL_Delay(500);                              /* 延时500毫秒，控制闪烁频率为1Hz */
+    
+    /* 将左摇杆Y轴数值映射到电机1转速 */
+    /* crsf_data.Left_Y 范围: 0 ~ 100, 0=停止, 100=全速 */
+    /* 电机速度范围: 0 ~ 1000 */
+    int16_t motor1_speed = (int16_t)(crsf_data.Left_Y * 10.0f);
+    Motor_SetSpeed(MOTOR_1, motor1_speed);
+    
+    /* 延时10ms，控制频率约100Hz */
+    HAL_Delay(10);
+    
   }
   /* USER CODE END 3 */
 }
