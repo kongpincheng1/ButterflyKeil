@@ -42,7 +42,9 @@
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
-
+#define LED_ON()    HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_RESET)
+#define LED_OFF()   HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_SET)
+#define LED_TOGGLE() HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin)
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
@@ -105,7 +107,7 @@ int main(void)
   CRSF_Init();
   
   /* 点亮LED指示灯，表示系统初始化完成 */
-  HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_SET);
+  LED_ON();
   
   /* USER CODE END 2 */
 
@@ -116,6 +118,8 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+    
+    LED_TOGGLE();
     
     /* 将左摇杆Y轴数值映射到电机1转速 */
     /* crsf_data.Left_Y 范围: 0 ~ 100, 0=停止, 100=全速 */
