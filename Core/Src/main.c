@@ -28,6 +28,8 @@
 /* USER CODE BEGIN Includes */
 #include "motor.h"  /* 包含电机控制模块头文件 */
 #include "crsf.h"   /* 包含CRSF协议接收模块头文件 */
+#include <string.h>  /* 包含字符串处理函数 */
+#include <stdio.h>   /* 包含标准输入输出函数 */
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -56,7 +58,7 @@
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
-
+void SendJoystickData(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -119,7 +121,9 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
     
-    LED_TOGGLE();
+    
+    /* 发送摇杆数据到USART1 */
+    SendJoystickData();
     
     /* 将左摇杆Y轴数值映射到电机1转速 */
     /* crsf_data.Left_Y 范围: 0 ~ 100, 0=停止, 100=全速 */
@@ -179,6 +183,25 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
+
+/**
+  * @brief  发送摇杆数据到USART1
+  * @param  无
+  * @retval 无
+  */
+void SendJoystickData(void)
+{
+  char buffer[100];
+  
+  /* 按照CSV格式格式化数据 */
+  sprintf(buffer, "%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%d,%d,%d,%d,%d,%d\r\n",
+          crsf_data.Left_X, crsf_data.Left_Y, crsf_data.Right_X, crsf_data.Right_Y,
+          crsf_data.S1, crsf_data.S2,
+          crsf_data.A, crsf_data.B, crsf_data.C, crsf_data.D, crsf_data.E, crsf_data.F);
+  
+  /* 通过USART1发送数据 */
+  HAL_UART_Transmit(&huart1, (uint8_t*)buffer, strlen(buffer), HAL_MAX_DELAY);
+}
 
 /* USER CODE END 4 */
 

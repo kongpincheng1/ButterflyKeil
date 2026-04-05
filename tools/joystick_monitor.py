@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-CRSF摇杆数据实时监测工具
-通过串口接收摇杆数据并实时绘制曲线
+CRSF Joystick Data Real-time Monitor
+Receive joystick data via serial port and plot in real-time
 
-数据格式预期：
-    CSV格式: Left_X,Left_Y,Right_X,Right_Y,S1,S2,A,B,C,D,E,F\r\n
-    示例: -45.5,23.0,12.5,-67.8,50.0,75.0,0,1,2,0,1,2\r\n
+Expected data format:
+    CSV format: Left_X,Left_Y,Right_X,Right_Y,S1,S2,A,B,C,D,E,F\r\n
+    Example: -45.5,23.0,12.5,-67.8,50.0,75.0,0,1,2,0,1,2\r\n
 
-依赖安装：
+Dependency installation:
     pip install pyserial matplotlib
 
-使用方法：
-    python joystick_monitor.py -p COM4 -b 115200
+Usage:
+    python joystick_monitor.py -p COM4 -b 420000
 """
 
 import serial
@@ -29,14 +29,14 @@ import numpy as np
 
 
 class JoystickMonitor:
-    def __init__(self, port, baudrate=115200, max_points=200):
+    def __init__(self, port, baudrate=420000, max_points=200):
         """
-        初始化摇杆监测器
+        Initialize joystick monitor
 
         Args:
-            port: 串口号，如 'COM4' 或 '/dev/ttyUSB0'
-            baudrate: 波特率，默认115200
-            max_points: 历史数据最大保留点数
+            port: Serial port, e.g., 'COM4' or '/dev/ttyUSB0'
+            baudrate: Baud rate, default 420000bps
+            max_points: Maximum number of historical data points to retain
         """
         self.port = port
         self.baudrate = baudrate
@@ -45,7 +45,7 @@ class JoystickMonitor:
         self.running = False
         self.lock = threading.Lock()
 
-        # 摇杆数据（浮点值 -100~100）
+        # Joystick data (float values -100~100)
         self.left_x = 0.0
         self.left_y = 0.0
         self.right_x = 0.0
@@ -53,7 +53,7 @@ class JoystickMonitor:
         self.s1 = 0.0
         self.s2 = 0.0
 
-        # 开关状态（0, 1, 2）
+        # Switch states (0, 1, 2)
         self.a = 0
         self.b = 0
         self.c = 0
@@ -61,7 +61,7 @@ class JoystickMonitor:
         self.e = 0
         self.f = 0
 
-        # 历史数据用于绘制曲线
+        # Historical data for plotting curves
         self.time_history = deque(maxlen=max_points)
         self.left_x_history = deque(maxlen=max_points)
         self.left_y_history = deque(maxlen=max_points)
@@ -76,7 +76,7 @@ class JoystickMonitor:
         self.fps = 0
 
     def connect(self):
-        """连接串口"""
+        """Connect to serial port"""
         try:
             self.ser = serial.Serial(
                 port=self.port,
@@ -86,24 +86,24 @@ class JoystickMonitor:
                 stopbits=serial.STOPBITS_ONE,
                 timeout=0.1
             )
-            print(f"✓ 成功连接到 {self.port} @ {self.baudrate}bps")
+            print(f"Successfully connected to {self.port} @ {self.baudrate}bps")
             return True
         except serial.SerialException as e:
-            print(f"✗ 无法连接到串口 {self.port}: {e}")
+            print(f"Cannot connect to serial port {self.port}: {e}")
             return False
 
     def disconnect(self):
-        """断开串口连接"""
+        """Disconnect from serial port"""
         self.running = False
         if self.ser and self.ser.is_open:
             self.ser.close()
-            print(f"✓ 已断开与 {self.port} 的连接")
+            print(f"Disconnected from {self.port}")
 
     def parse_data(self, line):
         """
-        解析CSV格式的摇杆数据
+        Parse CSV format joystick data
 
-        格式: Left_X,Left_Y,Right_X,Right_Y,S1,S2,A,B,C,D,E,F
+        Format: Left_X,Left_Y,Right_X,Right_Y,S1,S2,A,B,C,D,E,F
         """
         try:
             parts = line.strip().split(',')
@@ -122,7 +122,7 @@ class JoystickMonitor:
                     self.e = int(parts[10])
                     self.f = int(parts[11])
 
-                    # 记录历史数据
+                    # Record historical data
                     current_time = time.time() - self.start_time
                     self.time_history.append(current_time)
                     self.left_x_history.append(self.left_x)
@@ -139,7 +139,7 @@ class JoystickMonitor:
         return False
 
     def read_thread(self):
-        """串口读取线程"""
+        """Serial port read thread"""
         buffer = ""
         while self.running:
             try:
@@ -147,12 +147,12 @@ class JoystickMonitor:
                     data = self.ser.read(self.ser.in_waiting or 1)
                     if data:
                         buffer += data.decode('utf-8', errors='ignore')
-                        # 处理完整行
+                        # Process complete lines
                         while '\n' in buffer:
                             line, buffer = buffer.split('\n', 1)
                             self.parse_data(line)
             except serial.SerialException as e:
-                print(f"串口错误: {e}")
+                print(f"Serial port error: {e}")
                 break
             except Exception as e:
                 pass
@@ -160,14 +160,14 @@ class JoystickMonitor:
             time.sleep(0.001)
 
     def start(self):
-        """启动监测"""
+        """Start monitoring"""
         if not self.connect():
             return False
 
         self.running = True
         self.start_time = time.time()
 
-        # 启动读取线程
+        # Start read thread
         self.read_thread_obj = threading.Thread(target=self.read_thread)
         self.read_thread_obj.daemon = True
         self.read_thread_obj.start()
@@ -175,7 +175,7 @@ class JoystickMonitor:
         return True
 
     def get_data(self):
-        """获取当前摇杆数据（线程安全）"""
+        """Get current joystick data (thread-safe)"""
         with self.lock:
             return {
                 'left_x': self.left_x,
@@ -201,7 +201,7 @@ class JoystickMonitor:
 
 
 def draw_joystick(ax, x, y, title, color):
-    """绘制单个摇杆的可视化"""
+    """Draw single joystick visualization"""
     ax.clear()
     ax.set_xlim(-120, 120)
     ax.set_ylim(-120, 120)
@@ -209,17 +209,17 @@ def draw_joystick(ax, x, y, title, color):
     ax.axhline(y=0, color='gray', linestyle='-', alpha=0.3)
     ax.axvline(x=0, color='gray', linestyle='-', alpha=0.3)
 
-    # 绘制边界圆
+    # Draw boundary circle
     circle = Circle((0, 0), 100, fill=False, color='gray', linestyle='--', alpha=0.5)
     ax.add_patch(circle)
 
-    # 绘制摇杆位置
+    # Draw joystick position
     ax.plot(x, y, 'o', markersize=20, color=color, markeredgecolor='black', markeredgewidth=2)
 
-    # 绘制连接线
+    # Draw connection line
     ax.plot([0, x], [0, y], '-', color=color, alpha=0.5, linewidth=2)
 
-    # 显示数值
+    # Display value
     ax.text(0, 110, f'{title}', ha='center', fontsize=12, fontweight='bold')
     ax.text(0, -115, f'X:{x:6.1f} Y:{y:6.1f}', ha='center', fontsize=10, family='monospace')
 
@@ -227,123 +227,141 @@ def draw_joystick(ax, x, y, title, color):
 
 
 def draw_slider(ax, value, title, color):
-    """绘制滑块可视化"""
+    """Draw slider visualization"""
     ax.clear()
     ax.set_xlim(0, 100)
     ax.set_ylim(0, 1)
     ax.set_aspect('equal')
 
-    # 绘制滑块轨道
+    # Draw slider track
     rect = FancyBboxPatch((0, 0.3), 100, 0.4, boxstyle="round,pad=0.02",
                           facecolor='lightgray', edgecolor='gray')
     ax.add_patch(rect)
 
-    # 绘制滑块位置
+    # Draw slider position
     ax.plot(value, 0.5, 'o', markersize=15, color=color, markeredgecolor='black', markeredgewidth=2)
 
-    # 显示数值
+    # Display value
     ax.text(50, 1.2, f'{title}: {value:.1f}', ha='center', fontsize=11, fontweight='bold')
 
     ax.axis('off')
 
 
-def draw_switch(ax, value, title):
-    """绘制开关状态"""
-    colors = {0: 'lightgray', 1: 'green', 2: 'red'}
+def draw_switch(ax, value, title, is_three_position=False):
+    """Draw switch status
+    
+    Args:
+        ax: matplotlib axis object
+        value: switch value (0, 1, 2)
+        title: switch name
+        is_three_position: whether it's a three-position switch
+    """
+    if is_three_position:
+        # Three-position switch: 0=Down, 1=Mid, 2=Up
+        colors = {0: 'lightgray', 1: 'yellow', 2: 'green'}
+        labels = {0: 'Down', 1: 'Mid', 2: 'Up'}
+    else:
+        # Two-position switch: 0=Down, 1=Up
+        colors = {0: 'lightgray', 1: 'green'}
+        labels = {0: 'Down', 1: 'Up'}
+    
     color = colors.get(value, 'gray')
+    label = labels.get(value, str(value))
 
     ax.clear()
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1)
     ax.set_aspect('equal')
 
-    # 绘制开关背景
+    # Draw switch background
     rect = FancyBboxPatch((0.1, 0.2), 0.8, 0.6, boxstyle="round,pad=0.05",
                           facecolor=color, edgecolor='black', linewidth=2)
     ax.add_patch(rect)
 
-    # 显示数值
+    # Display value and gear label
     ax.text(0.5, 0.5, f'{value}', ha='center', va='center', fontsize=20, fontweight='bold')
+    ax.text(0.5, 0.1, label, ha='center', fontsize=10, color='blue')
     ax.text(0.5, -0.1, title, ha='center', fontsize=10)
 
     ax.axis('off')
 
 
 def create_plot(monitor):
-    """创建实时绘图窗口"""
+    """Create real-time plotting window"""
     fig = plt.figure(figsize=(16, 10))
-    fig.suptitle('CRSF摇杆数据实时监测', fontsize=16, fontweight='bold')
+    fig.suptitle('CRSF Joystick Data Real-time Monitor', fontsize=16, fontweight='bold')
 
-    # 创建子图布局
-    # 左摇杆
-    ax_left = fig.add_subplot(3, 4, 1)
-    # 右摇杆
-    ax_right = fig.add_subplot(3, 4, 2)
-    # 滑块S1
-    ax_s1 = fig.add_subplot(3, 4, 3)
-    # 滑块S2
-    ax_s2 = fig.add_subplot(3, 4, 4)
+    # Create subplot layout
+    # Left joystick
+    ax_left = fig.add_subplot(4, 4, 1)
+    # Right joystick
+    ax_right = fig.add_subplot(4, 4, 2)
+    # Slider S1
+    ax_s1 = fig.add_subplot(4, 4, 3)
+    # Slider S2
+    ax_s2 = fig.add_subplot(4, 4, 4)
 
-    # 开关A-F
-    ax_a = fig.add_subplot(3, 4, 5)
-    ax_b = fig.add_subplot(3, 4, 6)
-    ax_c = fig.add_subplot(3, 4, 7)
-    ax_d = fig.add_subplot(3, 4, 8)
-    ax_e = fig.add_subplot(3, 4, 9)
-    ax_f = fig.add_subplot(3, 4, 10)
+    # Switches: SA and SD on top row, SB and SC on bottom row
+    ax_b = fig.add_subplot(4, 4, 5)  # B(SA)
+    ax_f = fig.add_subplot(4, 4, 6)  # F(SD)
+    ax_e = fig.add_subplot(4, 4, 9)  # E(SB)
+    ax_c = fig.add_subplot(4, 4, 10) # C(SC)
 
-    # 历史曲线图
-    ax_history = fig.add_subplot(3, 4, (11, 12))
+    # Historical curve
+    ax_history = fig.add_subplot(4, 4, (13, 16))
 
     def update(frame):
         data = monitor.get_data()
 
-        # 计算FPS
+        # Calculate FPS
         current_time = time.time()
         if current_time - monitor.last_fps_time >= 1.0:
             monitor.fps = monitor.frame_count
             monitor.frame_count = 0
             monitor.last_fps_time = current_time
 
-        # 绘制摇杆
-        draw_joystick(ax_left, data['left_x'], data['left_y'], '左摇杆', 'blue')
-        draw_joystick(ax_right, data['right_x'], data['right_y'], '右摇杆', 'red')
+        # Draw joysticks
+        draw_joystick(ax_left, data['left_x'], data['left_y'], 'Left Joystick', 'blue')
+        draw_joystick(ax_right, data['right_x'], data['right_y'], 'Right Joystick', 'red')
 
-        # 绘制滑块
+        # Draw sliders
         draw_slider(ax_s1, data['s1'], 'S1', 'orange')
         draw_slider(ax_s2, data['s2'], 'S2', 'purple')
 
-        # 绘制开关
-        draw_switch(ax_a, data['a'], 'A')
-        draw_switch(ax_b, data['b'], 'B')
-        draw_switch(ax_c, data['c'], 'C')
-        draw_switch(ax_d, data['d'], 'D')
-        draw_switch(ax_e, data['e'], 'E')
-        draw_switch(ax_f, data['f'], 'F')
+        # Draw switches
+        # Mapping: SA->B, SC->C, SB->E, SD->F
+        # B(SA) is a two-position switch: 0=Down, 1=Up
+        draw_switch(ax_b, data['b'], 'B(SA)', is_three_position=False)
+        # F(SD) is a two-position switch: 0=Down, 1=Up
+        draw_switch(ax_f, data['f'], 'F(SD)', is_three_position=False)
+        # E(SB) is a three-position switch: 0=Down, 1=Mid, 2=Up
+        draw_switch(ax_e, data['e'], 'E(SB)', is_three_position=True)
+        # C(SC) is a three-position switch: 0=Down, 1=Mid, 2=Up
+        draw_switch(ax_c, data['c'], 'C(SC)', is_three_position=True)
 
-        # 绘制历史曲线
+        # Draw historical curve
         ax_history.clear()
         if len(data['time_history']) > 1:
             ax_history.plot(data['time_history'], data['left_x_history'], 'b-', label='Left X', alpha=0.7)
             ax_history.plot(data['time_history'], data['left_y_history'], 'b--', label='Left Y', alpha=0.7)
             ax_history.plot(data['time_history'], data['right_x_history'], 'r-', label='Right X', alpha=0.7)
             ax_history.plot(data['time_history'], data['right_y_history'], 'r--', label='Right Y', alpha=0.7)
-            ax_history.set_xlabel('时间 (秒)')
-            ax_history.set_ylabel('数值')
-            ax_history.set_title(f'历史数据曲线 (FPS: {monitor.fps})')
+            ax_history.set_xlabel('Time (s)')
+            ax_history.set_ylabel('Value')
+            ax_history.set_title(f'Historical Data Curve (FPS: {monitor.fps})')
             ax_history.legend(loc='upper right')
             ax_history.grid(True, alpha=0.3)
             ax_history.set_ylim(-120, 120)
 
         plt.tight_layout()
 
-    # 创建动画
+    # Create animation
     ani = animation.FuncAnimation(fig, update, interval=50, cache_frame_data=False)
 
-    # 添加关闭事件处理
+    # Add close event handler
     def on_close(event):
         monitor.disconnect()
-        print("监测已停止")
+        print("Monitoring stopped")
 
     fig.canvas.mpl_connect('close_event', on_close)
 
@@ -351,13 +369,13 @@ def create_plot(monitor):
 
 
 def list_serial_ports():
-    """列出可用串口"""
+    """List available serial ports"""
     ports = serial.tools.list_ports.comports()
     if not ports:
-        print("未找到可用串口")
+        print("No available serial ports found")
         return
 
-    print("\n可用串口列表:")
+    print("\nAvailable serial ports:")
     print("-" * 50)
     for port in ports:
         print(f"  {port.device}: {port.description}")
@@ -366,20 +384,20 @@ def list_serial_ports():
 
 def main():
     parser = argparse.ArgumentParser(
-        description='CRSF摇杆数据实时监测工具',
+        description='CRSF Joystick Data Real-time Monitor',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-示例:
-  %(prog)s -p COM4              # 使用COM4，默认115200波特率
-  %(prog)s -p /dev/ttyUSB0 -b 921600  # Linux系统，指定波特率
-  %(prog)s -l                   # 列出可用串口
+Examples:
+  %(prog)s -p COM4              # Use COM4, default 420000 baud rate
+  %(prog)s -p /dev/ttyUSB0 -b 921600  # Linux system, specify baud rate
+  %(prog)s -l                   # List available serial ports
         """
     )
-    parser.add_argument('-p', '--port', help='串口号 (如 COM4 或 /dev/ttyUSB0)')
-    parser.add_argument('-b', '--baudrate', type=int, default=115200,
-                        help='波特率 (默认: 115200)')
+    parser.add_argument('-p', '--port', help='Serial port (e.g., COM4 or /dev/ttyUSB0)')
+    parser.add_argument('-b', '--baudrate', type=int, default=420000,
+                        help='Baud rate (default: 420000)')
     parser.add_argument('-l', '--list', action='store_true',
-                        help='列出可用串口')
+                        help='List available serial ports')
 
     args = parser.parse_args()
 
@@ -388,37 +406,37 @@ def main():
         return
 
     if not args.port:
-        print("错误: 请指定串口号 (-p PORT)")
+        print("Error: Please specify serial port (-p PORT)")
         list_serial_ports()
-        print("\n使用 -h 查看帮助")
+        print("\nUse -h for help")
         sys.exit(1)
 
     print("=" * 60)
-    print("CRSF摇杆数据实时监测工具")
+    print("CRSF Joystick Data Real-time Monitor")
     print("=" * 60)
-    print(f"串口: {args.port}")
-    print(f"波特率: {args.baudrate}")
-    print(f"数据格式: CSV (Left_X,Left_Y,Right_X,Right_Y,S1,S2,A,B,C,D,E,F)")
+    print(f"Serial Port: {args.port}")
+    print(f"Baud Rate: {args.baudrate}")
+    print(f"Data Format: CSV (Left_X,Left_Y,Right_X,Right_Y,S1,S2,A,B,C,D,E,F)")
     print("=" * 60)
     print()
 
-    # 创建监测器
+    # Create monitor
     monitor = JoystickMonitor(args.port, args.baudrate)
 
-    # 启动监测
+    # Start monitoring
     if not monitor.start():
-        print("启动失败")
+        print("Startup failed")
         sys.exit(1)
 
-    print("正在启动图形界面...")
-    print("提示: 关闭图形窗口即可停止监测")
+    print("Starting graphical interface...")
+    print("Tip: Close the graphical window to stop monitoring")
     print()
 
     try:
-        # 创建绘图
+        # Create plot
         create_plot(monitor)
     except KeyboardInterrupt:
-        print("\n用户中断")
+        print("\nUser interrupted")
     finally:
         monitor.disconnect()
 

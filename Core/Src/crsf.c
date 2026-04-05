@@ -1,5 +1,6 @@
 #include "crsf.h"
 #include "usart.h"
+#include <string.h>
 
 extern DMA_HandleTypeDef hdma_usart1_rx;
 
@@ -172,12 +173,18 @@ void CRSF_UART_RxCallback(uint16_t Size)
         crsf_data.Right_Y = CRSF_FloatMapWithMedian(crsf_data.channels[1], 174, 1808, 992, -100, 100);
         crsf_data.S1 = CRSF_FloatMapWithMedian(crsf_data.channels[8], 191, 1792, 992, 0, 100);
         crsf_data.S2 = CRSF_FloatMapWithMedian(crsf_data.channels[9], 191, 1792, 992, 0, 100);
-        crsf_data.A = crsf_data.channels[10] > 1000 ? 1 : 0;
-        crsf_data.B = crsf_data.channels[5] == 992 ? 1 : (crsf_data.channels[5] == 1792 ? 2 : 0);
-        crsf_data.C = crsf_data.channels[6] == 992 ? 1 : (crsf_data.channels[6] == 1792 ? 2 : 0);
-        crsf_data.D = crsf_data.channels[11] > 1000 ? 1 : 0;
-        crsf_data.E = crsf_data.channels[4] == 992 ? 1 : (crsf_data.channels[4] == 1792 ? 2 : 0);
-        crsf_data.F = crsf_data.channels[7] == 992 ? 1 : (crsf_data.channels[7] == 1792 ? 2 : 0);
+        
+        // 遥控器按键映射关系
+        // SA对应B (通道5) - 二档位：下=0，上=1
+        // SD对应C (通道7) - 二档位：下=0，上=1
+        // SB对应E (通道6) - 三档位：下=0，中=1，上=2
+        // SC对应F (通道8) - 三档位：下=0，中=1，上=2
+        crsf_data.A = crsf_data.channels[10] > 1000 ? 1 : 0;  // 通道11：左按键A
+        crsf_data.B = crsf_data.channels[4] > 1500 ? 1 : 0;  // 通道5：拨杆SA -> B (二档位)
+        crsf_data.C = (crsf_data.channels[6] > 800 && crsf_data.channels[6] < 1100) ? 1 : (crsf_data.channels[6] > 1500 ? 2 : 0);  // 通道7：拨杆SD -> C (三档位)
+        crsf_data.D = crsf_data.channels[11] > 1000 ? 1 : 0;  // 通道12：右按键D
+        crsf_data.E = (crsf_data.channels[5] > 800 && crsf_data.channels[5] < 1100) ? 1 : (crsf_data.channels[5] > 1500 ? 2 : 0);  // 通道6：拨杆SB -> E (三档位)
+        crsf_data.F = crsf_data.channels[7] > 1500 ? 1 : 0;  // 通道8：拨杆SC -> F (二档位)
         break;
 
     case CRSF_FRAMETYPE_LINK_STATISTICS:
