@@ -60,6 +60,11 @@ class JoystickMonitor:
         self.d = 0
         self.e = 0
         self.f = 0
+        
+        # Battery voltage
+        self.battery_voltage = 0.0
+        # Debug: raw ADC value
+        self.adc_value = 0
 
         # Historical data for plotting curves
         self.time_history = deque(maxlen=max_points)
@@ -69,6 +74,7 @@ class JoystickMonitor:
         self.right_y_history = deque(maxlen=max_points)
         self.s1_history = deque(maxlen=max_points)
         self.s2_history = deque(maxlen=max_points)
+        self.battery_history = deque(maxlen=max_points)
 
         self.start_time = time.time()
         self.frame_count = 0
@@ -103,11 +109,11 @@ class JoystickMonitor:
         """
         Parse CSV format joystick data
 
-        Format: Left_X,Left_Y,Right_X,Right_Y,S1,S2,A,B,C,D,E,F
+        Format: Left_X,Left_Y,Right_X,Right_Y,S1,S2,A,B,C,D,E,F,BatteryVoltage,ADCValue
         """
         try:
             parts = line.strip().split(',')
-            if len(parts) >= 12:
+            if len(parts) >= 14:
                 with self.lock:
                     self.left_x = float(parts[0])
                     self.left_y = float(parts[1])
@@ -121,6 +127,8 @@ class JoystickMonitor:
                     self.d = int(parts[9])
                     self.e = int(parts[10])
                     self.f = int(parts[11])
+                    self.battery_voltage = float(parts[12])
+                    self.adc_value = int(parts[13])
 
                     # Record historical data
                     current_time = time.time() - self.start_time
@@ -131,6 +139,7 @@ class JoystickMonitor:
                     self.right_y_history.append(self.right_y)
                     self.s1_history.append(self.s1)
                     self.s2_history.append(self.s2)
+                    self.battery_history.append(self.battery_voltage)
 
                 self.frame_count += 1
                 return True
@@ -190,6 +199,8 @@ class JoystickMonitor:
                 'd': self.d,
                 'e': self.e,
                 'f': self.f,
+                'battery_voltage': self.battery_voltage,
+                'adc_value': self.adc_value,
                 'time_history': list(self.time_history),
                 'left_x_history': list(self.left_x_history),
                 'left_y_history': list(self.left_y_history),
@@ -197,6 +208,7 @@ class JoystickMonitor:
                 'right_y_history': list(self.right_y_history),
                 's1_history': list(self.s1_history),
                 's2_history': list(self.s2_history),
+                'battery_history': list(self.battery_history),
             }
 
 
@@ -286,6 +298,52 @@ def draw_switch(ax, value, title, is_three_position=False):
     ax.axis('off')
 
 
+def draw_battery(ax, voltage, adc_value):
+    """Draw battery voltage display
+    
+    Args:
+        ax: matplotlib axis object
+        voltage: battery voltage value
+        adc_value: raw ADC value for debugging
+    """
+    ax.clear()
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.set_aspect('equal')
+
+    # Determine battery status color
+    if voltage > 7.0:
+        color = 'green'
+    elif voltage > 6.5:
+        color = 'yellow'
+    else:
+        color = 'red'
+
+    # Draw battery outline
+    rect = FancyBboxPatch((0.1, 0.2), 0.7, 0.6, boxstyle="round,pad=0.05",
+                          facecolor='white', edgecolor='black', linewidth=2)
+    ax.add_patch(rect)
+
+    # Draw battery positive terminal
+    rect = FancyBboxPatch((0.8, 0.35), 0.1, 0.3, boxstyle="round,pad=0.02",
+                          facecolor='white', edgecolor='black', linewidth=2)
+    ax.add_patch(rect)
+
+    # Draw battery level
+    level = min((voltage - 6.0) / 2.4, 1.0)  # Assume 6.0V to 8.4V range
+    if level > 0:
+        rect = FancyBboxPatch((0.15, 0.25), 0.6 * level, 0.5, boxstyle="round,pad=0.02",
+                              facecolor=color, edgecolor='black', linewidth=1)
+        ax.add_patch(rect)
+
+    # Display voltage and ADC value
+    ax.text(0.5, 0.6, f'{voltage:.2f}V', ha='center', va='center', fontsize=12, fontweight='bold')
+    ax.text(0.5, 0.35, f'ADC:{adc_value}', ha='center', va='center', fontsize=9, color='blue')
+    ax.text(0.5, -0.1, 'Battery', ha='center', fontsize=10)
+
+    ax.axis('off')
+
+
 def create_plot(monitor):
     """Create real-time plotting window"""
     fig = plt.figure(figsize=(16, 10))
@@ -298,8 +356,8 @@ def create_plot(monitor):
     ax_right = fig.add_subplot(4, 4, 2)
     # Slider S1
     ax_s1 = fig.add_subplot(4, 4, 3)
-    # Slider S2
-    ax_s2 = fig.add_subplot(4, 4, 4)
+    # Battery voltage
+    ax_battery = fig.add_subplot(4, 4, 4)
 
     # Switches: SA and SD on top row, SB and SC on bottom row
     ax_b = fig.add_subplot(4, 4, 5)  # B(SA)
@@ -324,9 +382,9 @@ def create_plot(monitor):
         draw_joystick(ax_left, data['left_x'], data['left_y'], 'Left Joystick', 'blue')
         draw_joystick(ax_right, data['right_x'], data['right_y'], 'Right Joystick', 'red')
 
-        # Draw sliders
+        # Draw sliders and battery
         draw_slider(ax_s1, data['s1'], 'S1', 'orange')
-        draw_slider(ax_s2, data['s2'], 'S2', 'purple')
+        draw_battery(ax_battery, data['battery_voltage'], data['adc_value'])
 
         # Draw switches
         # Mapping: SA->B, SC->C, SB->E, SD->F
@@ -346,6 +404,7 @@ def create_plot(monitor):
             ax_history.plot(data['time_history'], data['left_y_history'], 'b--', label='Left Y', alpha=0.7)
             ax_history.plot(data['time_history'], data['right_x_history'], 'r-', label='Right X', alpha=0.7)
             ax_history.plot(data['time_history'], data['right_y_history'], 'r--', label='Right Y', alpha=0.7)
+            ax_history.plot(data['time_history'], data['battery_history'], 'g-', label='Battery (V)', alpha=0.7)
             ax_history.set_xlabel('Time (s)')
             ax_history.set_ylabel('Value')
             ax_history.set_title(f'Historical Data Curve (FPS: {monitor.fps})')

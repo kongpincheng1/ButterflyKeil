@@ -11,24 +11,25 @@
 ## 硬件配置
 
 ### MCU
+
 - 芯片：STM32G0 系列
 - 开发环境：Keil MDK
 
 ### 引脚分配
 
-| 功能 | 引脚 | 说明 |
-|------|------|------|
-| LED | PB4 | 状态指示灯（低电平有效） |
-| PWM1 | PC6 | 电机1 PWM 输出 |
-| PWM2 | PA7 | 电机2 PWM 输出 |
-| PWM3 | PB0 | 电机3 PWM 输出 |
-| PWM4 | PB1 | 电机4 PWM 输出 |
-| DIR1 | PA8 | 电机1 方向控制 |
-| DIR2 | PA11 | 电机2 方向控制 |
-| DIR3 | PA12 | 电机3 方向控制 |
-| DIR4 | PA15 | 电机4 方向控制 |
-| TX | PB6 | USART1 发送（CRSF） |
-| RX | PB7 | USART1 接收（CRSF） |
+| 功能   | 引脚   | 说明              |
+| ---- | ---- | --------------- |
+| LED  | PB4  | 状态指示灯（低电平有效）    |
+| PWM1 | PC6  | 电机1 PWM 输出      |
+| PWM2 | PA7  | 电机2 PWM 输出      |
+| PWM3 | PB0  | 电机3 PWM 输出      |
+| PWM4 | PB1  | 电机4 PWM 输出      |
+| DIR1 | PA8  | 电机1 方向控制        |
+| DIR2 | PA11 | 电机2 方向控制        |
+| DIR3 | PA12 | 电机3 方向控制        |
+| DIR4 | PA15 | 电机4 方向控制        |
+| TX   | PB6  | USART1 发送（CRSF） |
+| RX   | PB7  | USART1 接收（CRSF） |
 
 ## 模块说明
 
@@ -67,6 +68,43 @@ crsf_data.C           // 拨杆 C (0/1/2)
 crsf_data.D           // 右按键 D (0/1)
 crsf_data.E           // 拨杆 E (0/1/2)
 crsf_data.F           // 拨杆 F (0/1/2)
+```
+
+## 工具说明
+
+### 摇杆数据监控工具 (tools/joystick_monitor.py)
+
+这是一个基于Python的实时数据监控工具，用于显示遥控器摇杆数据和电池电压。
+
+![CRSF Joystick Data Monitor](picture/Tools.png)
+
+**功能特点：**
+
+- **实时数据显示**：左摇杆、右摇杆、滑块位置
+- **开关状态监控**：B(SA)、F(SD)、E(SB)、C(SC)开关状态
+- **电池电压监控**：实时显示电池电压和原始ADC值
+- **历史曲线**：显示摇杆数据和电池电压的变化曲线
+- **帧率显示**：实时显示数据更新帧率
+
+**使用方法：**
+
+```bash
+# 安装依赖
+pip install pyserial matplotlib
+
+# 运行监控工具
+python tools/joystick_monitor.py -p COM4 -b 420000
+
+# 查看可用串口
+python tools/joystick_monitor.py -l
+```
+
+**数据格式：**
+
+工具接收来自STM32的CSV格式数据：
+
+```
+Left_X,Left_Y,Right_X,Right_Y,S1,S2,A,B,C,D,E,F,BatteryVoltage,ADCValue
 ```
 
 ## 编译与烧录
