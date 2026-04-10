@@ -29,12 +29,12 @@ import numpy as np
 
 
 class JoystickMonitor:
-    def __init__(self, port, baudrate=420000, max_points=200):
+    def __init__(self, port='COM7', baudrate=420000, max_points=200):
         """
         Initialize joystick monitor
 
         Args:
-            port: Serial port, e.g., 'COM4' or '/dev/ttyUSB0'
+            port: Serial port, e.g., 'COM7' or '/dev/ttyUSB0'
             baudrate: Baud rate, default 420000bps
             max_points: Maximum number of historical data points to retain
         """
@@ -65,6 +65,12 @@ class JoystickMonitor:
         self.battery_voltage = 0.0
         # Debug: raw ADC value
         self.adc_value = 0
+        # Hall sensor data
+        self.hall_value = 0.0
+        self.hall_adc_value = 0
+        self.hall_min = 0.0
+        self.hall_max = 0.0
+        self.hall_avg = 0.0
 
         # Historical data for plotting curves
         self.time_history = deque(maxlen=max_points)
@@ -75,6 +81,7 @@ class JoystickMonitor:
         self.s1_history = deque(maxlen=max_points)
         self.s2_history = deque(maxlen=max_points)
         self.battery_history = deque(maxlen=max_points)
+        self.hall_history = deque(maxlen=max_points)
 
         self.start_time = time.time()
         self.frame_count = 0
@@ -109,11 +116,11 @@ class JoystickMonitor:
         """
         Parse CSV format joystick data
 
-        Format: Left_X,Left_Y,Right_X,Right_Y,S1,S2,A,B,C,D,E,F,BatteryVoltage,ADCValue
+        Format: Left_X,Left_Y,Right_X,Right_Y,S1,S2,A,B,C,D,E,F,BatteryVoltage,ADCValue,HallValue,HallADCValue,HallMin,HallMax,HallAvg
         """
         try:
             parts = line.strip().split(',')
-            if len(parts) >= 14:
+            if len(parts) >= 19:
                 with self.lock:
                     self.left_x = float(parts[0])
                     self.left_y = float(parts[1])
@@ -129,6 +136,12 @@ class JoystickMonitor:
                     self.f = int(parts[11])
                     self.battery_voltage = float(parts[12])
                     self.adc_value = int(parts[13])
+                    # Hall sensor data
+                    self.hall_value = float(parts[14])
+                    self.hall_adc_value = int(parts[15])
+                    self.hall_min = float(parts[16])
+                    self.hall_max = float(parts[17])
+                    self.hall_avg = float(parts[18])
 
                     # Record historical data
                     current_time = time.time() - self.start_time
@@ -140,6 +153,7 @@ class JoystickMonitor:
                     self.s1_history.append(self.s1)
                     self.s2_history.append(self.s2)
                     self.battery_history.append(self.battery_voltage)
+                    self.hall_history.append(self.hall_value)
 
                 self.frame_count += 1
                 return True
@@ -201,6 +215,11 @@ class JoystickMonitor:
                 'f': self.f,
                 'battery_voltage': self.battery_voltage,
                 'adc_value': self.adc_value,
+                'hall_value': self.hall_value,
+                'hall_adc_value': self.hall_adc_value,
+                'hall_min': self.hall_min,
+                'hall_max': self.hall_max,
+                'hall_avg': self.hall_avg,
                 'time_history': list(self.time_history),
                 'left_x_history': list(self.left_x_history),
                 'left_y_history': list(self.left_y_history),
@@ -209,6 +228,7 @@ class JoystickMonitor:
                 's1_history': list(self.s1_history),
                 's2_history': list(self.s2_history),
                 'battery_history': list(self.battery_history),
+                'hall_history': list(self.hall_history),
             }
 
 
@@ -344,6 +364,44 @@ def draw_battery(ax, voltage, adc_value):
     ax.axis('off')
 
 
+def draw_hall_sensor(ax, hall_value, hall_adc_value, hall_min, hall_max, hall_avg):
+    """Draw hall sensor data display
+    
+    Args:
+        ax: matplotlib axis object
+        hall_value: current hall sensor value
+        hall_adc_value: raw hall ADC value for debugging
+        hall_min: minimum hall sensor value
+        hall_max: maximum hall sensor value
+        hall_avg: average hall sensor value
+    """
+    ax.clear()
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.set_aspect('equal')
+
+    # Draw sensor outline
+    rect = FancyBboxPatch((0.05, 0.1), 0.9, 0.8, boxstyle="round,pad=0.05",
+                          facecolor='white', edgecolor='black', linewidth=2)
+    ax.add_patch(rect)
+
+    # Display current value
+    ax.text(0.5, 0.75, f'Current: {hall_value:.3f}V', ha='center', va='center', fontsize=11, fontweight='bold')
+    
+    # Display min, max, avg values
+    ax.text(0.33, 0.5, f'Min: {hall_min:.3f}V', ha='center', va='center', fontsize=10)
+    ax.text(0.5, 0.5, f'Max: {hall_max:.3f}V', ha='center', va='center', fontsize=10)
+    ax.text(0.67, 0.5, f'Avg: {hall_avg:.3f}V', ha='center', va='center', fontsize=10)
+    
+    # Display raw ADC value
+    ax.text(0.5, 0.25, f'ADC: {hall_adc_value}', ha='center', va='center', fontsize=9, color='blue')
+    
+    # Display sensor name
+    ax.text(0.5, -0.1, 'Hall Sensor', ha='center', fontsize=10)
+
+    ax.axis('off')
+
+
 def create_plot(monitor):
     """Create real-time plotting window"""
     fig = plt.figure(figsize=(16, 10))
@@ -364,6 +422,8 @@ def create_plot(monitor):
     ax_f = fig.add_subplot(4, 4, 6)  # F(SD)
     ax_e = fig.add_subplot(4, 4, 9)  # E(SB)
     ax_c = fig.add_subplot(4, 4, 10) # C(SC)
+    # Hall sensor
+    ax_hall = fig.add_subplot(4, 4, (7, 8))  # Hall sensor display
 
     # Historical curve
     ax_history = fig.add_subplot(4, 4, (13, 16))
@@ -382,9 +442,10 @@ def create_plot(monitor):
         draw_joystick(ax_left, data['left_x'], data['left_y'], 'Left Joystick', 'blue')
         draw_joystick(ax_right, data['right_x'], data['right_y'], 'Right Joystick', 'red')
 
-        # Draw sliders and battery
+        # Draw sliders, battery, and hall sensor
         draw_slider(ax_s1, data['s1'], 'S1', 'orange')
         draw_battery(ax_battery, data['battery_voltage'], data['adc_value'])
+        draw_hall_sensor(ax_hall, data['hall_value'], data['hall_adc_value'], data['hall_min'], data['hall_max'], data['hall_avg'])
 
         # Draw switches
         # Mapping: SA->B, SC->C, SB->E, SD->F
@@ -405,6 +466,7 @@ def create_plot(monitor):
             ax_history.plot(data['time_history'], data['right_x_history'], 'r-', label='Right X', alpha=0.7)
             ax_history.plot(data['time_history'], data['right_y_history'], 'r--', label='Right Y', alpha=0.7)
             ax_history.plot(data['time_history'], data['battery_history'], 'g-', label='Battery (V)', alpha=0.7)
+            ax_history.plot(data['time_history'], data['hall_history'], 'purple', label='Hall (V)', alpha=0.7)
             ax_history.set_xlabel('Time (s)')
             ax_history.set_ylabel('Value')
             ax_history.set_title(f'Historical Data Curve (FPS: {monitor.fps})')

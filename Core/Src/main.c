@@ -55,8 +55,17 @@
 
 /* 电池电压变量 */
 float batteryVoltage = 0.0f;
+/* 霍尔传感器变量 */
+float hallSensorValue = 0.0f;
 /* 调试用：原始ADC值 */
 uint32_t debug_adc_value = 0;
+uint32_t debug_hall_adc_value = 0;
+/* 霍尔传感器统计数据 */
+float hall_min = 4095.0f;
+float hall_max = 0.0f;
+float hall_sum_total = 0.0f;
+int hall_count = 0;
+float hall_avg_total = 0.0f;
 
 /* USER CODE END PV */
 
@@ -133,17 +142,23 @@ int main(void)
     /* USER CODE BEGIN 3 */
     
     
-    /* 发送摇杆数据到USART1 */
-    SendJoystickData();
-    
-    /* 将左摇杆Y轴数值映射到电机1转速 */
+      /* 将左摇杆Y轴数值映射到电机1转速 */
     /* crsf_data.Left_Y 范围: 0 ~ 100, 0=停止, 100=全速 */
     /* 电机速度范围: 0 ~ 1000 */
     int16_t motor1_speed = (int16_t)(crsf_data.Left_Y * 10.0f);
     Motor_SetSpeed(MOTOR_1, motor1_speed);
     
-    /* 延时10ms，控制频率约100Hz */
-    HAL_Delay(10);
+    /* 每5次循环发送一次数据，减少串口传输开销 */
+    static uint8_t send_counter = 0;
+    if (++send_counter >= 5)
+    {
+      /* 发送摇杆数据到USART1 */
+      SendJoystickData();
+      send_counter = 0;
+    }
+    
+    /* 延时5ms，控制频率约200Hz */
+    HAL_Delay(5);
     
   }
   /* USER CODE END 3 */
@@ -196,15 +211,16 @@ void SystemClock_Config(void)
 /* USER CODE BEGIN 4 */
 
 /**
-  * @brief  读取电池电压
+  * @brief  读取电池电压和霍尔传感器值
   * @param  无
-  * @retval 电池电压值 (V)
+  * @retval 无
   */
-float ReadBatteryVoltage(void)
+void ReadSensors(void)
 {
-  uint32_t adc_sum = 0;
-  float voltage = 0.0f;
-  int sample_count = 10;
+  uint32_t adc_values[2];
+  int sample_count = 3;  /* 减少采样次数，从10次减少到3次 */
+  uint32_t bat_sum = 0;
+  uint32_t hall_sum = 0;
   
   /* 多次采样取平均 */
   for(int i = 0; i < sample_count; i++)
@@ -213,33 +229,62 @@ float ReadBatteryVoltage(void)
     HAL_ADC_Start(&hadc1);
     
     /* 等待转换完成 */
-    if (HAL_ADC_PollForConversion(&hadc1, 100) == HAL_OK)
+    if (HAL_ADC_PollForConversion(&hadc1, 50) == HAL_OK)
     {
-      /* 累加ADC值 */
-      adc_sum += HAL_ADC_GetValue(&hadc1);
+      /* 读取第一个通道（电池电压） */
+      adc_values[0] = HAL_ADC_GetValue(&hadc1);
+      
+      /* 读取第二个通道（霍尔传感器） */
+      if (HAL_ADC_PollForConversion(&hadc1, 50) == HAL_OK)
+      {
+        adc_values[1] = HAL_ADC_GetValue(&hadc1);
+      }
+      
+      bat_sum += adc_values[0];
+      hall_sum += adc_values[1];
     }
     
     /* 停止ADC转换 */
     HAL_ADC_Stop(&hadc1);
     
-    /* 短延时，避免采样过快 */
-    HAL_Delay(1);
+    /* 移除延时，ADC转换速度足够快 */
   }
   
   /* 计算平均ADC值 */
-  uint32_t adc_avg = adc_sum / sample_count;
-  debug_adc_value = adc_avg;  /* 保存原始ADC值用于调试 */
+  uint32_t bat_avg = bat_sum / sample_count;
+  uint32_t hall_avg_val = hall_sum / sample_count;
   
-  /* 计算电压值
-   * 参考电压: 3.3V
-   * ADC分辨率: 12位 (0-4095) - 过采样后实际为16位精度
-   * 分压电阻: R1=27kΩ, R3=16.9kΩ
-   * 电压计算公式: Vbat = (adc_value * 3.3V / 4095) * (27k + 16.9k) / 16.9k
-   *                      = (adc_value * 3.3V / 4095) * 2.598
-   */
-  voltage = (float)adc_avg * 3.3f / 4095.0f * 2.598f;
+  /* 保存原始ADC值用于调试 */
+  debug_adc_value = bat_avg;
+  debug_hall_adc_value = hall_avg_val;
   
-  return voltage;
+  /* 计算电池电压 */
+  batteryVoltage = (float)bat_avg * 3.3f / 4095.0f * 2.598f;
+  
+  /* 计算霍尔传感器值 */
+  hallSensorValue = (float)hall_avg_val * 3.3f / 4095.0f;
+  
+  /* 每10次更新一次统计数据，减少计算开销 */
+  static uint8_t stat_counter = 0;
+  if (++stat_counter >= 10)
+  {
+    /* 更新霍尔传感器统计数据 */
+    if (hallSensorValue < hall_min)
+    {
+      hall_min = hallSensorValue;
+    }
+    if (hallSensorValue > hall_max)
+    {
+      hall_max = hallSensorValue;
+    }
+    hall_sum_total += hallSensorValue;
+    hall_count++;
+    if (hall_count > 0)
+    {
+      hall_avg_total = hall_sum_total / hall_count;
+    }
+    stat_counter = 0;
+  }
 }
 
 /**
@@ -251,18 +296,19 @@ void SendJoystickData(void)
 {
   char buffer[150];
   
-  /* 读取电池电压 */
-  batteryVoltage = ReadBatteryVoltage();
+  /* 读取传感器数据 */
+  ReadSensors();
   
-  /* 按照CSV格式格式化数据 - 添加原始ADC值用于调试 */
-  sprintf(buffer, "%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%d,%d,%d,%d,%d,%d,%.2f,%lu\r\n",
+  /* 按照CSV格式格式化数据 - 添加原始ADC值和霍尔传感器数据用于调试 */
+  sprintf(buffer, "%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%d,%d,%d,%d,%d,%d,%.2f,%lu,%.3f,%lu,%.3f,%.3f,%.3f\r\n",
           crsf_data.Left_X, crsf_data.Left_Y, crsf_data.Right_X, crsf_data.Right_Y,
           crsf_data.S1, crsf_data.S2,
           crsf_data.A, crsf_data.B, crsf_data.C, crsf_data.D, crsf_data.E, crsf_data.F,
-          batteryVoltage, debug_adc_value);
+          batteryVoltage, debug_adc_value,
+          hallSensorValue, debug_hall_adc_value, hall_min, hall_max, hall_avg_total);
   
-  /* 通过USART1发送数据 */
-  HAL_UART_Transmit(&huart1, (uint8_t*)buffer, strlen(buffer), HAL_MAX_DELAY);
+  /* 使用非阻塞方式发送数据，设置较短的超时时间 */
+  HAL_UART_Transmit(&huart1, (uint8_t*)buffer, strlen(buffer), 10);
 }
 
 /* USER CODE END 4 */
