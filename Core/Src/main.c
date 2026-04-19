@@ -217,76 +217,32 @@ void SystemClock_Config(void)
   */
 void ReadSensors(void)
 {
-  uint32_t adc_values[2];
-  int sample_count = 3;  /* 减少采样次数，从10次减少到3次 */
-  uint32_t bat_sum = 0;
-  uint32_t hall_sum = 0;
-  
-  /* 多次采样取平均 */
-  for(int i = 0; i < sample_count; i++)
-  {
-    /* 启动ADC转换 */
-    HAL_ADC_Start(&hadc1);
-    
-    /* 等待转换完成 */
-    if (HAL_ADC_PollForConversion(&hadc1, 50) == HAL_OK)
-    {
-      /* 读取第一个通道（电池电压） */
-      adc_values[0] = HAL_ADC_GetValue(&hadc1);
-      
-      /* 读取第二个通道（霍尔传感器） */
-      if (HAL_ADC_PollForConversion(&hadc1, 50) == HAL_OK)
-      {
-        adc_values[1] = HAL_ADC_GetValue(&hadc1);
-      }
-      
-      bat_sum += adc_values[0];
-      hall_sum += adc_values[1];
-    }
-    
-    /* 停止ADC转换 */
-    HAL_ADC_Stop(&hadc1);
-    
-    /* 移除延时，ADC转换速度足够快 */
-  }
-  
-  /* 计算平均ADC值 */
-  uint32_t bat_avg = bat_sum / sample_count;
-  uint32_t hall_avg_val = hall_sum / sample_count;
-  
-  /* 保存原始ADC值用于调试 */
-  debug_adc_value = bat_avg;
-  debug_hall_adc_value = hall_avg_val;
-  
-  /* 计算电池电压 */
-  batteryVoltage = (float)bat_avg * 3.3f / 4095.0f * 2.598f;
-  
-  /* 计算霍尔传感器值 */
-  hallSensorValue = (float)hall_avg_val * 3.3f / 4095.0f;
-  
-  /* 每10次更新一次统计数据，减少计算开销 */
-  static uint8_t stat_counter = 0;
-  if (++stat_counter >= 10)
-  {
-    /* 更新霍尔传感器统计数据 */
-    if (hallSensorValue < hall_min)
-    {
-      hall_min = hallSensorValue;
-    }
-    if (hallSensorValue > hall_max)
-    {
-      hall_max = hallSensorValue;
-    }
-    hall_sum_total += hallSensorValue;
-    hall_count++;
-    if (hall_count > 0)
-    {
-      hall_avg_total = hall_sum_total / hall_count;
-    }
-    stat_counter = 0;
-  }
-}
+  uint32_t adc_buf[2] = {0};
 
+  HAL_ADC_Start(&hadc1);
+
+  // 等待并读取通道2（电池）
+  if (HAL_ADC_PollForConversion(&hadc1, 10) == HAL_OK)
+  {
+    adc_buf[0] = HAL_ADC_GetValue(&hadc1);
+    __HAL_ADC_CLEAR_FLAG(&hadc1, ADC_FLAG_EOC); // 清标志
+  }
+
+  // 等待并读取通道3（霍尔）
+  if (HAL_ADC_PollForConversion(&hadc1, 10) == HAL_OK)
+  {
+    adc_buf[1] = HAL_ADC_GetValue(&hadc1);
+    __HAL_ADC_CLEAR_FLAG(&hadc1, ADC_FLAG_EOC); // 清标志
+  }
+
+  HAL_ADC_Stop(&hadc1);
+
+  debug_adc_value = adc_buf[0];
+  debug_hall_adc_value = adc_buf[1];
+
+  batteryVoltage = (float)adc_buf[0] * 3.3f / 4095.0f * 2.598f;
+  hallSensorValue = (float)adc_buf[1] * 3.3f / 4095.0f;
+}
 /**
   * @brief  发送摇杆数据到USART1
   * @param  无
@@ -305,7 +261,7 @@ void SendJoystickData(void)
           crsf_data.S1, crsf_data.S2,
           crsf_data.A, crsf_data.B, crsf_data.C, crsf_data.D, crsf_data.E, crsf_data.F,
           batteryVoltage, debug_adc_value,
-          hallSensorValue, debug_hall_adc_value, hall_min, hall_max, hall_avg_total);
+          hallSensorValue, debug_hall_adc_value, 0, 0, 0);
   
   /* 使用非阻塞方式发送数据，设置较短的超时时间 */
   HAL_UART_Transmit(&huart1, (uint8_t*)buffer, strlen(buffer), 10);
