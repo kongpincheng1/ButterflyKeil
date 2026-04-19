@@ -67,6 +67,13 @@ float hall_sum_total = 0.0f;
 int hall_count = 0;
 float hall_avg_total = 0.0f;
 
+/* 电机控制参数 - 可配置 */
+float hall_threshold_low = 1.2f;    /* 低位阈值（V） */
+float hall_threshold_high = 1.9f;   /* 高位阈值（V） */
+float hall_deadzone = 0.1f;         /* 死区范围（V） */
+float hall_deadzone_low;             /* 低位死区上限 */
+float hall_deadzone_high;            /* 高位死区下限 */
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -131,6 +138,10 @@ int main(void)
   /* 点亮LED指示灯，表示系统初始化完成 */
   LED_ON();
   
+  /* 初始化电机控制参数 */
+  hall_deadzone_low = hall_threshold_low + hall_deadzone;
+  hall_deadzone_high = hall_threshold_high - hall_deadzone;
+  
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -142,23 +153,48 @@ int main(void)
     /* USER CODE BEGIN 3 */
     
     
-      /* 将左摇杆Y轴数值映射到电机1转速 */
-    /* crsf_data.Left_Y 范围: 0 ~ 100, 0=停止, 100=全速 */
-    /* 电机速度范围: 0 ~ 1000 */
-    int16_t motor1_speed = (int16_t)(crsf_data.Left_Y * 10.0f);
-    Motor_SetSpeed(MOTOR_1, motor1_speed);
+      /* 基于霍尔传感器值的扑翼控制 */
+    /* 当霍尔传感器值在低位死区上限和高位死区下限之间时，电机正转 */
+    /* 当霍尔传感器值低于低位阈值或高于高位阈值时，电机反转 */
+    /* 当霍尔传感器值在死区范围内时，保持当前方向不变 */
+    /* 速度由摇杆控制 */
+    int16_t base_speed = (int16_t)(crsf_data.Left_Y * 10.0f);
+    static int16_t last_speed = 0;  /* 记录上一次的速度值（包含方向） */
+    int16_t motor1_speed;
     
-    /* 每5次循环发送一次数据，减少串口传输开销 */
-    static uint8_t send_counter = 0;
-    if (++send_counter >= 5)
+    if (hallSensorValue < hall_threshold_low)
     {
-      /* 发送摇杆数据到USART1 */
-      SendJoystickData();
-      send_counter = 0;
+      // 低于低位阈值，反向转动
+      motor1_speed = -base_speed;
+    }
+    else if (hallSensorValue > hall_threshold_high)
+    {
+      // 高于高位阈值，反向转动
+      motor1_speed = -base_speed;
+    }
+    else if (hallSensorValue >= hall_deadzone_low && hallSensorValue <= hall_deadzone_high)
+    {
+      // 在有效范围内，正向转动
+      motor1_speed = base_speed;
+    }
+    else
+    {
+      // 在死区范围内，保持当前方向
+      motor1_speed = (last_speed >= 0) ? base_speed : -base_speed;
     }
     
-    /* 延时5ms，控制频率约200Hz */
-    HAL_Delay(5);
+    // 记录当前速度值
+    last_speed = motor1_speed;
+    
+    Motor_SetSpeed(MOTOR_1, motor1_speed);
+    
+
+    /* 发送摇杆数据到USART1 */
+    SendJoystickData();
+
+    
+    /* 延时1ms，控制频率约200Hz */
+    HAL_Delay(1);
     
   }
   /* USER CODE END 3 */
@@ -261,7 +297,7 @@ void SendJoystickData(void)
           crsf_data.S1, crsf_data.S2,
           crsf_data.A, crsf_data.B, crsf_data.C, crsf_data.D, crsf_data.E, crsf_data.F,
           batteryVoltage, debug_adc_value,
-          hallSensorValue, debug_hall_adc_value, 0, 0, 0);
+          hallSensorValue, debug_hall_adc_value, 0.0f, 0.0f, 0.0f);
   
   /* 使用非阻塞方式发送数据，设置较短的超时时间 */
   HAL_UART_Transmit(&huart1, (uint8_t*)buffer, strlen(buffer), 10);
