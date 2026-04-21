@@ -74,12 +74,21 @@ float hall_deadzone = 0.1f;         /* 死区范围（V） */
 float hall_deadzone_low;             /* 低位死区上限 */
 float hall_deadzone_high;            /* 高位死区下限 */
 
+/* 定义运行状态 */
+typedef enum {
+    FLAP_UP,
+    FLAP_DOWN
+} FlapState_t;
+
+static FlapState_t current_state = FLAP_UP;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
 void SendJoystickData(void);
+void Flap_Control_Logic(int16_t base_speed);
+void ReadSensors(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -151,7 +160,7 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    
+    ReadSensors();
     
       /* 基于霍尔传感器值的扑翼控制 */
     /* 当霍尔传感器值在低位死区上限和高位死区下限之间时，电机正转 */
@@ -159,40 +168,9 @@ int main(void)
     /* 当霍尔传感器值在死区范围内时，保持当前方向不变 */
     /* 速度由摇杆控制 */
     int16_t base_speed = (int16_t)(crsf_data.Left_Y * 10.0f);
-    static int16_t last_speed = 0;  /* 记录上一次的速度值（包含方向） */
-    int16_t motor1_speed;
-    
-    if (hallSensorValue < hall_threshold_low)
-    {
-      // 低于低位阈值，反向转动
-      motor1_speed = -base_speed;
-    }
-    else if (hallSensorValue > hall_threshold_high)
-    {
-      // 高于高位阈值，反向转动
-      motor1_speed = -base_speed;
-    }
-    else if (hallSensorValue >= hall_deadzone_low && hallSensorValue <= hall_deadzone_high)
-    {
-      // 在有效范围内，正向转动
-      motor1_speed = base_speed;
-    }
-    else
-    {
-      // 在死区范围内，保持当前方向
-      motor1_speed = (last_speed >= 0) ? base_speed : -base_speed;
-    }
-    
-    // 记录当前速度值
-    last_speed = motor1_speed;
-    
-    Motor_SetSpeed(MOTOR_1, motor1_speed);
-    
-
+    Flap_Control_Logic(base_speed);
     /* 发送摇杆数据到USART1 */
     SendJoystickData();
-
-    
     /* 延时1ms，控制频率约200Hz */
     HAL_Delay(1);
     
@@ -288,8 +266,6 @@ void SendJoystickData(void)
 {
   char buffer[150];
   
-  /* 读取传感器数据 */
-  ReadSensors();
   
   /* 按照CSV格式格式化数据 - 添加原始ADC值和霍尔传感器数据用于调试 */
   sprintf(buffer, "%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%d,%d,%d,%d,%d,%d,%.2f,%lu,%.3f,%lu,%.3f,%.3f,%.3f\r\n",
@@ -303,6 +279,41 @@ void SendJoystickData(void)
   HAL_UART_Transmit(&huart1, (uint8_t*)buffer, strlen(buffer), 10);
 }
 
+void Flap_Control_Logic(int16_t speed)
+{
+    static int filter_count = 0;
+    const int FILTER_THRESHOLD = 3; // 连续 3ms 满足条件才换向，过滤掉单次采样错误
+
+    switch (current_state)
+    {
+        case FLAP_UP:
+            Motor_SetSpeed(MOTOR_1, speed);
+            if (hallSensorValue > hall_threshold_high) {
+                filter_count++;
+                if(filter_count >= FILTER_THRESHOLD) {
+                    current_state = FLAP_DOWN;
+                    filter_count = 0;
+                }
+            } else {
+                filter_count = 0;
+            }
+            break;
+            
+        case FLAP_DOWN:
+            Motor_SetSpeed(MOTOR_1, -speed);
+            // 重点优化：如果 ADC 读到 0 这种明显错误的值，直接忽略，不换向
+            if (hallSensorValue < hall_threshold_low) {
+                filter_count++;
+                if(filter_count >= FILTER_THRESHOLD) {
+                    current_state = FLAP_UP;
+                    filter_count = 0;
+                }
+            } else {
+                filter_count = 0;
+            }
+            break;
+    }
+}
 /* USER CODE END 4 */
 
 /**
