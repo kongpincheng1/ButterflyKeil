@@ -70,9 +70,6 @@ float hall_avg_total = 0.0f;
 /* 电机控制参数 - 可配置 */
 float hall_threshold_low = 1.2f;    /* 低位阈值（V） */
 float hall_threshold_high = 1.9f;   /* 高位阈值（V） */
-float hall_deadzone = 0.1f;         /* 死区范围（V） */
-float hall_deadzone_low;             /* 低位死区上限 */
-float hall_deadzone_high;            /* 高位死区下限 */
 
 /* 定义运行状态 */
 typedef enum {
@@ -81,6 +78,7 @@ typedef enum {
 } FlapState_t;
 
 static FlapState_t current_state = FLAP_UP;
+float k_comp;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -148,8 +146,7 @@ int main(void)
   LED_ON();
   
   /* 初始化电机控制参数 */
-  hall_deadzone_low = hall_threshold_low + hall_deadzone;
-  hall_deadzone_high = hall_threshold_high - hall_deadzone;
+  k_comp=(hall_threshold_high-hall_threshold_low)*0.3*0.5/1000.0f ;
   
   /* USER CODE END 2 */
 
@@ -282,13 +279,23 @@ void SendJoystickData(void)
 void Flap_Control_Logic(int16_t speed)
 {
     static int filter_count = 0;
-    const int FILTER_THRESHOLD = 3; // 连续 3ms 满足条件才换向，过滤掉单次采样错误
+    const int FILTER_THRESHOLD = 2; // 略微减小滤波，提高响应速度
+
+    // 1. 计算绝对速度，用于线性补偿
+    uint16_t abs_speed = (speed > 0) ? speed : -speed;
+
+    // 2. 计算动态阈值 (线性缩减边界)
+    // 假设 speed 最大为 1000，k_comp 为 0.0005，则最大偏移量为 0.5V
+    float dyn_threshold_high = hall_threshold_high - (k_comp * (float)abs_speed);
+    float dyn_threshold_low = hall_threshold_low + (k_comp * (float)abs_speed);
+
 
     switch (current_state)
     {
         case FLAP_UP:
             Motor_SetSpeed(MOTOR_1, speed);
-            if (hallSensorValue > hall_threshold_high) {
+            // 使用动态高位阈值
+            if (hallSensorValue > dyn_threshold_high) {
                 filter_count++;
                 if(filter_count >= FILTER_THRESHOLD) {
                     current_state = FLAP_DOWN;
@@ -301,8 +308,8 @@ void Flap_Control_Logic(int16_t speed)
             
         case FLAP_DOWN:
             Motor_SetSpeed(MOTOR_1, -speed);
-            // 重点优化：如果 ADC 读到 0 这种明显错误的值，直接忽略，不换向
-            if (hallSensorValue < hall_threshold_low) {
+            // 使用动态低位阈值
+            if (hallSensorValue < dyn_threshold_low) {
                 filter_count++;
                 if(filter_count >= FILTER_THRESHOLD) {
                     current_state = FLAP_UP;
