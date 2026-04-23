@@ -74,6 +74,9 @@ class JoystickMonitor:
         # Second hall sensor data
         self.hall_value2 = 0.0
         self.hall_adc_value2 = 0
+        # Motor direction states: 0=UP, 1=DOWN
+        self.motor1_state = 0
+        self.motor4_state = 0
 
         # Historical data for plotting curves
         self.time_history = deque(maxlen=max_points)
@@ -124,7 +127,7 @@ class JoystickMonitor:
         """
         try:
             parts = line.strip().split(',')
-            if len(parts) >= 19:
+            if len(parts) >= 23:
                 with self.lock:
                     self.left_x = float(parts[0])
                     self.left_y = float(parts[1])
@@ -150,6 +153,9 @@ class JoystickMonitor:
                     self.hall_min = float(parts[18])
                     self.hall_max = float(parts[19])
                     self.hall_avg = float(parts[20])
+                    # Motor direction states: 0=FLAP_UP, 1=FLAP_DOWN
+                    self.motor1_state = int(parts[21])
+                    self.motor4_state = int(parts[22])
 
                     # Record historical data
                     current_time = time.time() - self.start_time
@@ -231,6 +237,8 @@ class JoystickMonitor:
                 'hall_min': self.hall_min,
                 'hall_max': self.hall_max,
                 'hall_avg': self.hall_avg,
+                'motor1_state': self.motor1_state,
+                'motor4_state': self.motor4_state,
                 'time_history': list(self.time_history),
                 'left_x_history': list(self.left_x_history),
                 'left_y_history': list(self.left_y_history),
@@ -416,7 +424,7 @@ def draw_hall_sensor(ax, hall_value, hall_adc_value, hall_min, hall_max, hall_av
 
 def draw_hall_sensor2(ax, hall_value, hall_adc_value):
     """Draw second hall sensor data display
-    
+
     Args:
         ax: matplotlib axis object
         hall_value: current hall sensor value
@@ -434,12 +442,46 @@ def draw_hall_sensor2(ax, hall_value, hall_adc_value):
 
     # Display current value
     ax.text(0.5, 0.75, f'Current: {hall_value:.3f}V', ha='center', va='center', fontsize=11, fontweight='bold')
-    
+
     # Display raw ADC value
     ax.text(0.5, 0.5, f'ADC: {hall_adc_value}', ha='center', va='center', fontsize=9, color='blue')
-    
+
     # Display sensor name
     ax.text(0.5, -0.1, 'Hall Sensor 2', ha='center', fontsize=10)
+
+    ax.axis('off')
+
+
+def draw_motor_state(ax, state, title, color):
+    """Draw motor direction state display
+
+    Args:
+        ax: matplotlib axis object
+        state: motor state (0=UP, 1=DOWN)
+        title: motor name
+        color: display color
+    """
+    ax.clear()
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.set_aspect('equal')
+
+    state_colors = {0: 'green', 1: 'red'}
+    state_labels = {0: 'UP', 1: 'DOWN'}
+
+    state_color = state_colors.get(state, 'gray')
+    state_label = state_labels.get(state, 'UNKNOWN')
+
+    # Draw state outline
+    rect = FancyBboxPatch((0.05, 0.15), 0.9, 0.7, boxstyle="round,pad=0.05",
+                          facecolor=state_color, edgecolor='black', linewidth=3)
+    ax.add_patch(rect)
+
+    # Display state
+    ax.text(0.5, 0.5, state_label, ha='center', va='center', fontsize=16, fontweight='bold', color='white')
+
+    # Display title
+    ax.text(0.5, -0.1, title, ha='center', fontsize=10)
 
     ax.axis('off')
 
@@ -468,6 +510,10 @@ def create_plot(monitor):
     ax_hall = fig.add_subplot(4, 4, 7)  # Hall sensor 1 display
     # Hall sensor 2
     ax_hall2 = fig.add_subplot(4, 4, 8)  # Hall sensor 2 display
+    # Motor 1 state
+    ax_motor1_state = fig.add_subplot(4, 4, 11)  # Motor 1 state display
+    # Motor 4 state
+    ax_motor4_state = fig.add_subplot(4, 4, 12)  # Motor 4 state display
 
     # Historical curve
     ax_history = fig.add_subplot(4, 4, (13, 16))
@@ -491,6 +537,8 @@ def create_plot(monitor):
         draw_battery(ax_battery, data['battery_voltage'], data['adc_value'])
         draw_hall_sensor(ax_hall, data['hall_value'], data['hall_adc_value'], data['hall_min'], data['hall_max'], data['hall_avg'])
         draw_hall_sensor2(ax_hall2, data['hall_value2'], data['hall_adc_value2'])
+        draw_motor_state(ax_motor1_state, data['motor1_state'], 'Motor 1', 'blue')
+        draw_motor_state(ax_motor4_state, data['motor4_state'], 'Motor 4', 'red')
 
         # Draw switches
         # Mapping: SA->B, SC->C, SB->E, SD->F

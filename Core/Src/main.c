@@ -73,6 +73,10 @@ float hall_avg_total = 0.0f;
 float hall_threshold_low = 1.2f;    /* 低位阈值（V） */
 float hall_threshold_high = 1.9f;   /* 高位阈值（V） */
 
+/* 电机4霍尔传感器参数 - 独立配置 */
+float hall_threshold_low_m4 = 1.3f;    /* 电机4低位阈值（V） */
+float hall_threshold_high_m4 = 2.3f;   /* 电机4高位阈值（V） */
+
 /* 定义运行状态 */
 typedef enum {
     FLAP_UP,
@@ -80,7 +84,9 @@ typedef enum {
 } FlapState_t;
 
 static FlapState_t current_state = FLAP_UP;
+static FlapState_t current_state_m4 = FLAP_DOWN;
 float k_comp;
+float k_comp_m4;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -88,6 +94,7 @@ void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
 void SendJoystickData(void);
 void Flap_Control_Logic(int16_t base_speed);
+void Flap_Control_Logic_Motor4(int16_t base_speed);
 void ReadSensors(void);
 /* USER CODE END PFP */
 
@@ -148,7 +155,8 @@ int main(void)
   LED_ON();
   
   /* 初始化电机控制参数 */
-  k_comp=(hall_threshold_high-hall_threshold_low)*0.3*0.5/1000.0f ;
+  k_comp=(hall_threshold_high-hall_threshold_low)*0.4*0.5/1000.0f ;
+  k_comp_m4=(hall_threshold_high_m4-hall_threshold_low_m4)*0.4*0.5/1000.0f ;
   
   /* USER CODE END 2 */
 
@@ -168,6 +176,7 @@ int main(void)
     /* 速度由摇杆控制 */
     int16_t base_speed = (int16_t)(crsf_data.Left_Y * 10.0f);
     Flap_Control_Logic(base_speed);
+    Flap_Control_Logic_Motor4(base_speed);
     /* 发送摇杆数据到USART1 */
     SendJoystickData();
     /* 延时1ms，控制频率约200Hz */
@@ -276,14 +285,15 @@ void SendJoystickData(void)
   
   
   /* 按照CSV格式格式化数据 - 添加原始ADC值和霍尔传感器数据用于调试 */
-  sprintf(buffer, "%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%d,%d,%d,%d,%d,%d,%.2f,%lu,%.3f,%lu,%.3f,%lu,%.3f,%.3f,%.3f\r\n",
+  sprintf(buffer, "%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%d,%d,%d,%d,%d,%d,%.2f,%lu,%.3f,%lu,%.3f,%lu,%.3f,%.3f,%.3f,%d,%d\r\n",
           crsf_data.Left_X, crsf_data.Left_Y, crsf_data.Right_X, crsf_data.Right_Y,
           crsf_data.S1, crsf_data.S2,
           crsf_data.A, crsf_data.B, crsf_data.C, crsf_data.D, crsf_data.E, crsf_data.F,
           batteryVoltage, debug_adc_value,
           hallSensorValue, debug_hall_adc_value,
           hallSensorValue2, debug_hall_adc_value2,
-          0.0f, 0.0f, 0.0f);
+          0.0f, 0.0f, 0.0f,
+          current_state, current_state_m4);
   
   /* 使用非阻塞方式发送数据，设置较短的超时时间 */
   HAL_UART_Transmit(&huart1, (uint8_t*)buffer, strlen(buffer), 10);
@@ -330,6 +340,47 @@ void Flap_Control_Logic(int16_t speed)
                 }
             } else {
                 filter_count = 0;
+            }
+            break;
+    }
+}
+
+void Flap_Control_Logic_Motor4(int16_t speed)
+{
+    static int filter_count_m4 = 0;
+    const int FILTER_THRESHOLD_M4 = 2;
+
+    uint16_t abs_speed_m4 = (speed > 0) ? speed : -speed;
+
+    float dyn_threshold_high_m4 = hall_threshold_high_m4 - (k_comp_m4 * (float)abs_speed_m4);
+    float dyn_threshold_low_m4 = hall_threshold_low_m4 + (k_comp_m4 * (float)abs_speed_m4);
+
+
+    switch (current_state_m4)
+    {
+        case FLAP_UP:
+            Motor_SetSpeed(MOTOR_4, -speed);
+            if (hallSensorValue2 > dyn_threshold_high_m4) {
+                filter_count_m4++;
+                if(filter_count_m4 >= FILTER_THRESHOLD_M4) {
+                    current_state_m4 = FLAP_DOWN;
+                    filter_count_m4 = 0;
+                }
+            } else {
+                filter_count_m4 = 0;
+            }
+            break;
+
+        case FLAP_DOWN:
+            Motor_SetSpeed(MOTOR_4, speed);
+            if (hallSensorValue2 < dyn_threshold_low_m4) {
+                filter_count_m4++;
+                if(filter_count_m4 >= FILTER_THRESHOLD_M4) {
+                    current_state_m4 = FLAP_UP;
+                    filter_count_m4 = 0;
+                }
+            } else {
+                filter_count_m4 = 0;
             }
             break;
     }
