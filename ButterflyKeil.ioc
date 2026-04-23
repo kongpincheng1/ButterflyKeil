@@ -1,15 +1,18 @@
 #MicroXplorer Configuration settings - do not modify
 ADC1.Channel-1\#ChannelRegularConversion=ADC_CHANNEL_2
 ADC1.Channel-3\#ChannelRegularConversion=ADC_CHANNEL_6
+ADC1.Channel-4\#ChannelRegularConversion=ADC_CHANNEL_3
 ADC1.EOCSelection=ADC_EOC_SINGLE_CONV
 ADC1.EnableAnalogWatchDog1=false
-ADC1.IPParameters=Rank-1\#ChannelRegularConversion,Channel-1\#ChannelRegularConversion,SamplingTime-1\#ChannelRegularConversion,NbrOfConversionFlag,master,SelectedChannel,SamplingTimeCommon1,SamplingTimeCommon2,NbrOfConversion,Rank-3\#ChannelRegularConversion,Channel-3\#ChannelRegularConversion,SamplingTime-3\#ChannelRegularConversion,EOCSelection,EnableAnalogWatchDog1
-ADC1.NbrOfConversion=2
+ADC1.IPParameters=Rank-1\#ChannelRegularConversion,Channel-1\#ChannelRegularConversion,SamplingTime-1\#ChannelRegularConversion,NbrOfConversionFlag,master,SelectedChannel,SamplingTimeCommon1,SamplingTimeCommon2,NbrOfConversion,Rank-3\#ChannelRegularConversion,Channel-3\#ChannelRegularConversion,SamplingTime-3\#ChannelRegularConversion,EOCSelection,EnableAnalogWatchDog1,Rank-4\#ChannelRegularConversion,Channel-4\#ChannelRegularConversion,SamplingTime-4\#ChannelRegularConversion
+ADC1.NbrOfConversion=3
 ADC1.NbrOfConversionFlag=1
 ADC1.Rank-1\#ChannelRegularConversion=1
 ADC1.Rank-3\#ChannelRegularConversion=2
+ADC1.Rank-4\#ChannelRegularConversion=3
 ADC1.SamplingTime-1\#ChannelRegularConversion=ADC_SAMPLINGTIME_COMMON_1
 ADC1.SamplingTime-3\#ChannelRegularConversion=ADC_SAMPLINGTIME_COMMON_2
+ADC1.SamplingTime-4\#ChannelRegularConversion=ADC_SAMPLINGTIME_COMMON_2
 ADC1.SamplingTimeCommon1=ADC_SAMPLETIME_12CYCLES_5
 ADC1.SamplingTimeCommon2=ADC_SAMPLETIME_160CYCLES_5
 ADC1.SelectedChannel=ADC_CHANNEL_2|ADC_CHANNEL_3|ADC_CHANNEL_4|ADC_CHANNEL_5|ADC_CHANNEL_6
