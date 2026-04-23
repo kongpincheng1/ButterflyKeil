@@ -56,10 +56,12 @@
 /* 电池电压变量 */
 float batteryVoltage = 0.0f;
 /* 霍尔传感器变量 */
-float hallSensorValue = 0.0f;
+float hallSensorValue = 0.0f;      /* 第一个霍尔传感器 */
+float hallSensorValue2 = 0.0f;     /* 第二个霍尔传感器 */
 /* 调试用：原始ADC值 */
 uint32_t debug_adc_value = 0;
 uint32_t debug_hall_adc_value = 0;
+uint32_t debug_hall_adc_value2 = 0;
 /* 霍尔传感器统计数据 */
 float hall_min = 4095.0f;
 float hall_max = 0.0f;
@@ -228,7 +230,7 @@ void SystemClock_Config(void)
   */
 void ReadSensors(void)
 {
-  uint32_t adc_buf[2] = {0};
+  uint32_t adc_buf[3] = {0};
 
   HAL_ADC_Start(&hadc1);
 
@@ -239,10 +241,17 @@ void ReadSensors(void)
     __HAL_ADC_CLEAR_FLAG(&hadc1, ADC_FLAG_EOC); // 清标志
   }
 
-  // 等待并读取通道3（霍尔）
+  // 等待并读取通道3（霍尔1）
   if (HAL_ADC_PollForConversion(&hadc1, 10) == HAL_OK)
   {
     adc_buf[1] = HAL_ADC_GetValue(&hadc1);
+    __HAL_ADC_CLEAR_FLAG(&hadc1, ADC_FLAG_EOC); // 清标志
+  }
+
+  // 等待并读取通道4（霍尔2）
+  if (HAL_ADC_PollForConversion(&hadc1, 10) == HAL_OK)
+  {
+    adc_buf[2] = HAL_ADC_GetValue(&hadc1);
     __HAL_ADC_CLEAR_FLAG(&hadc1, ADC_FLAG_EOC); // 清标志
   }
 
@@ -250,9 +259,11 @@ void ReadSensors(void)
 
   debug_adc_value = adc_buf[0];
   debug_hall_adc_value = adc_buf[1];
+  debug_hall_adc_value2 = adc_buf[2];
 
   batteryVoltage = (float)adc_buf[0] * 3.3f / 4095.0f * 2.598f;
   hallSensorValue = (float)adc_buf[1] * 3.3f / 4095.0f;
+  hallSensorValue2 = (float)adc_buf[2] * 3.3f / 4095.0f;
 }
 /**
   * @brief  发送摇杆数据到USART1
@@ -265,12 +276,14 @@ void SendJoystickData(void)
   
   
   /* 按照CSV格式格式化数据 - 添加原始ADC值和霍尔传感器数据用于调试 */
-  sprintf(buffer, "%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%d,%d,%d,%d,%d,%d,%.2f,%lu,%.3f,%lu,%.3f,%.3f,%.3f\r\n",
+  sprintf(buffer, "%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%d,%d,%d,%d,%d,%d,%.2f,%lu,%.3f,%lu,%.3f,%lu,%.3f,%.3f,%.3f\r\n",
           crsf_data.Left_X, crsf_data.Left_Y, crsf_data.Right_X, crsf_data.Right_Y,
           crsf_data.S1, crsf_data.S2,
           crsf_data.A, crsf_data.B, crsf_data.C, crsf_data.D, crsf_data.E, crsf_data.F,
           batteryVoltage, debug_adc_value,
-          hallSensorValue, debug_hall_adc_value, 0.0f, 0.0f, 0.0f);
+          hallSensorValue, debug_hall_adc_value,
+          hallSensorValue2, debug_hall_adc_value2,
+          0.0f, 0.0f, 0.0f);
   
   /* 使用非阻塞方式发送数据，设置较短的超时时间 */
   HAL_UART_Transmit(&huart1, (uint8_t*)buffer, strlen(buffer), 10);

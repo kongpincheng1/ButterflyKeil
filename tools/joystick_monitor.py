@@ -71,6 +71,9 @@ class JoystickMonitor:
         self.hall_min = 0.0
         self.hall_max = 0.0
         self.hall_avg = 0.0
+        # Second hall sensor data
+        self.hall_value2 = 0.0
+        self.hall_adc_value2 = 0
 
         # Historical data for plotting curves
         self.time_history = deque(maxlen=max_points)
@@ -82,6 +85,7 @@ class JoystickMonitor:
         self.s2_history = deque(maxlen=max_points)
         self.battery_history = deque(maxlen=max_points)
         self.hall_history = deque(maxlen=max_points)
+        self.hall_history2 = deque(maxlen=max_points)
 
         self.start_time = time.time()
         self.frame_count = 0
@@ -139,9 +143,13 @@ class JoystickMonitor:
                     # Hall sensor data
                     self.hall_value = float(parts[14])
                     self.hall_adc_value = int(parts[15])
-                    self.hall_min = float(parts[16])
-                    self.hall_max = float(parts[17])
-                    self.hall_avg = float(parts[18])
+                    # Second hall sensor data
+                    self.hall_value2 = float(parts[16])
+                    self.hall_adc_value2 = int(parts[17])
+                    # Hall sensor statistics (using first hall sensor data)
+                    self.hall_min = float(parts[18])
+                    self.hall_max = float(parts[19])
+                    self.hall_avg = float(parts[20])
 
                     # Record historical data
                     current_time = time.time() - self.start_time
@@ -154,6 +162,7 @@ class JoystickMonitor:
                     self.s2_history.append(self.s2)
                     self.battery_history.append(self.battery_voltage)
                     self.hall_history.append(self.hall_value)
+                    self.hall_history2.append(self.hall_value2)
 
                 self.frame_count += 1
                 return True
@@ -217,6 +226,8 @@ class JoystickMonitor:
                 'adc_value': self.adc_value,
                 'hall_value': self.hall_value,
                 'hall_adc_value': self.hall_adc_value,
+                'hall_value2': self.hall_value2,
+                'hall_adc_value2': self.hall_adc_value2,
                 'hall_min': self.hall_min,
                 'hall_max': self.hall_max,
                 'hall_avg': self.hall_avg,
@@ -229,6 +240,7 @@ class JoystickMonitor:
                 's2_history': list(self.s2_history),
                 'battery_history': list(self.battery_history),
                 'hall_history': list(self.hall_history),
+                'hall_history2': list(self.hall_history2),
             }
 
 
@@ -397,7 +409,37 @@ def draw_hall_sensor(ax, hall_value, hall_adc_value, hall_min, hall_max, hall_av
     ax.text(0.5, 0.25, f'ADC: {hall_adc_value}', ha='center', va='center', fontsize=9, color='blue')
     
     # Display sensor name
-    ax.text(0.5, -0.1, 'Hall Sensor', ha='center', fontsize=10)
+    ax.text(0.5, -0.1, 'Hall Sensor 1', ha='center', fontsize=10)
+
+    ax.axis('off')
+
+
+def draw_hall_sensor2(ax, hall_value, hall_adc_value):
+    """Draw second hall sensor data display
+    
+    Args:
+        ax: matplotlib axis object
+        hall_value: current hall sensor value
+        hall_adc_value: raw hall ADC value for debugging
+    """
+    ax.clear()
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.set_aspect('equal')
+
+    # Draw sensor outline
+    rect = FancyBboxPatch((0.05, 0.1), 0.9, 0.8, boxstyle="round,pad=0.05",
+                          facecolor='white', edgecolor='black', linewidth=2)
+    ax.add_patch(rect)
+
+    # Display current value
+    ax.text(0.5, 0.75, f'Current: {hall_value:.3f}V', ha='center', va='center', fontsize=11, fontweight='bold')
+    
+    # Display raw ADC value
+    ax.text(0.5, 0.5, f'ADC: {hall_adc_value}', ha='center', va='center', fontsize=9, color='blue')
+    
+    # Display sensor name
+    ax.text(0.5, -0.1, 'Hall Sensor 2', ha='center', fontsize=10)
 
     ax.axis('off')
 
@@ -422,8 +464,10 @@ def create_plot(monitor):
     ax_f = fig.add_subplot(4, 4, 6)  # F(SD)
     ax_e = fig.add_subplot(4, 4, 9)  # E(SB)
     ax_c = fig.add_subplot(4, 4, 10) # C(SC)
-    # Hall sensor
-    ax_hall = fig.add_subplot(4, 4, (7, 8))  # Hall sensor display
+    # Hall sensor 1
+    ax_hall = fig.add_subplot(4, 4, 7)  # Hall sensor 1 display
+    # Hall sensor 2
+    ax_hall2 = fig.add_subplot(4, 4, 8)  # Hall sensor 2 display
 
     # Historical curve
     ax_history = fig.add_subplot(4, 4, (13, 16))
@@ -442,10 +486,11 @@ def create_plot(monitor):
         draw_joystick(ax_left, data['left_x'], data['left_y'], 'Left Joystick', 'blue')
         draw_joystick(ax_right, data['right_x'], data['right_y'], 'Right Joystick', 'red')
 
-        # Draw sliders, battery, and hall sensor
+        # Draw sliders, battery, and hall sensors
         draw_slider(ax_s1, data['s1'], 'S1', 'orange')
         draw_battery(ax_battery, data['battery_voltage'], data['adc_value'])
         draw_hall_sensor(ax_hall, data['hall_value'], data['hall_adc_value'], data['hall_min'], data['hall_max'], data['hall_avg'])
+        draw_hall_sensor2(ax_hall2, data['hall_value2'], data['hall_adc_value2'])
 
         # Draw switches
         # Mapping: SA->B, SC->C, SB->E, SD->F
@@ -466,7 +511,8 @@ def create_plot(monitor):
             ax_history.plot(data['time_history'], data['right_x_history'], 'r-', label='Right X', alpha=0.7)
             ax_history.plot(data['time_history'], data['right_y_history'], 'r--', label='Right Y', alpha=0.7)
             ax_history.plot(data['time_history'], data['battery_history'], 'g-', label='Battery (V)', alpha=0.7)
-            ax_history.plot(data['time_history'], data['hall_history'], 'purple', label='Hall (V)', alpha=0.7)
+            ax_history.plot(data['time_history'], data['hall_history'], 'purple', label='Hall 1 (V)', alpha=0.7)
+            ax_history.plot(data['time_history'], data['hall_history2'], 'green', label='Hall 2 (V)', alpha=0.7)
             ax_history.set_xlabel('Time (s)')
             ax_history.set_ylabel('Value')
             ax_history.set_title(f'Historical Data Curve (FPS: {monitor.fps})')
