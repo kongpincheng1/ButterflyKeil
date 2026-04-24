@@ -123,7 +123,7 @@ class JoystickMonitor:
         """
         Parse CSV format joystick data
 
-        Format: Left_X,Left_Y,Right_X,Right_Y,S1,S2,A,B,C,D,E,F,BatteryVoltage,ADCValue,HallValue,HallADCValue,HallMin,HallMax,HallAvg
+        Format: Left_X,Left_Y,Right_X,Right_Y,S1,S2,A,B,C,D,E,F,BatteryVoltage,ADCValue,HallValue,HallADCValue,HallValue2,HallADCValue2,SyncErr,LeftPhase,RightPhase,Motor1State,Motor4State
         """
         try:
             parts = line.strip().split(',')
@@ -149,7 +149,7 @@ class JoystickMonitor:
                     # Second hall sensor data
                     self.hall_value2 = float(parts[16])
                     self.hall_adc_value2 = int(parts[17])
-                    # Hall sensor statistics (using first hall sensor data)
+                    # Sync debug values
                     self.hall_min = float(parts[18])
                     self.hall_max = float(parts[19])
                     self.hall_avg = float(parts[20])
@@ -385,15 +385,15 @@ def draw_battery(ax, voltage, adc_value):
 
 
 def draw_hall_sensor(ax, hall_value, hall_adc_value, hall_min, hall_max, hall_avg):
-    """Draw hall sensor data display
+    """Draw hall sensor and sync debug data display
     
     Args:
         ax: matplotlib axis object
         hall_value: current hall sensor value
         hall_adc_value: raw hall ADC value for debugging
-        hall_min: minimum hall sensor value
-        hall_max: maximum hall sensor value
-        hall_avg: average hall sensor value
+        hall_min: sync phase error
+        hall_max: left wing normalized phase
+        hall_avg: right wing normalized phase
     """
     ax.clear()
     ax.set_xlim(0, 1)
@@ -408,10 +408,10 @@ def draw_hall_sensor(ax, hall_value, hall_adc_value, hall_min, hall_max, hall_av
     # Display current value
     ax.text(0.5, 0.75, f'Current: {hall_value:.3f}V', ha='center', va='center', fontsize=11, fontweight='bold')
     
-    # Display min, max, avg values
-    ax.text(0.33, 0.5, f'Min: {hall_min:.3f}V', ha='center', va='center', fontsize=10)
-    ax.text(0.5, 0.5, f'Max: {hall_max:.3f}V', ha='center', va='center', fontsize=10)
-    ax.text(0.67, 0.5, f'Avg: {hall_avg:.3f}V', ha='center', va='center', fontsize=10)
+    # Display sync debug values
+    ax.text(0.23, 0.5, f'Err: {hall_min:.3f}', ha='center', va='center', fontsize=9)
+    ax.text(0.5, 0.5, f'LPh: {hall_max:.3f}', ha='center', va='center', fontsize=9)
+    ax.text(0.77, 0.5, f'RPh: {hall_avg:.3f}', ha='center', va='center', fontsize=9)
     
     # Display raw ADC value
     ax.text(0.5, 0.25, f'ADC: {hall_adc_value}', ha='center', va='center', fontsize=9, color='blue')

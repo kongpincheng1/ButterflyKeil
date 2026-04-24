@@ -71,7 +71,7 @@ float hall_avg_total = 0.0f;
 
 /* 电机控制参数 - 可配置 */
 float hall_threshold_low = 1.2f;    /* 低位阈值（V） */
-float hall_threshold_high = 1.9f;   /* 高位阈值（V） */
+float hall_threshold_high = 2.2f;   /* 高位阈值（V） */
 
 /* 电机4霍尔传感器参数 - 独立配置 */
 float hall_threshold_low_m4 = 1.3f;    /* 电机4低位阈值（V） */
@@ -83,18 +83,56 @@ typedef enum {
     FLAP_DOWN
 } FlapState_t;
 
+typedef struct {
+    float kp;
+    float ki;
+    float kd;
+    float integral;
+    float prev_error;
+    float output_limit;
+    float integral_limit;
+} SyncPid_t;
+
 static FlapState_t current_state = FLAP_UP;
 static FlapState_t current_state_m4 = FLAP_DOWN;
 float k_comp;
 float k_comp_m4;
+float stand_wing_target_m1 = 1.70f;      /* 立翅目标霍尔电压，可按实测调整 */
+float stand_wing_target_m4 = 1.80f;      /* 立翅目标霍尔电压，可按实测调整 */
+float stand_wing_deadband = 0.03f;       /* 立翅保持死区 */
+float stand_wing_kp = 1800.0f;           /* 立翅位置控制比例系数 */
+int16_t stand_wing_min_speed = 120;      /* 立翅最小驱动速度，克服静摩擦 */
+int16_t stand_wing_max_speed = 420;      /* 立翅最大驱动速度 */
+static uint8_t stand_wing_mode_active = 0;
+static float sync_phase_error = 0.0f;
+static float sync_pid_output = 0.0f;
+static float wing_phase_left = 0.0f;
+static float wing_phase_right = 0.0f;
+static int16_t sync_speed_motor1 = 0;
+static int16_t sync_speed_motor4 = 0;
+
+static SyncPid_t flap_sync_pid = {
+    .kp = 420.0f,
+    .ki = 10.0f,
+    .kd = 90.0f,
+    .integral = 0.0f,
+    .prev_error = 0.0f,
+    .output_limit = 220.0f,
+    .integral_limit = 0.30f
+};
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
 void SendJoystickData(void);
+static void InitFlapStates(void);
 void Flap_Control_Logic(int16_t base_speed);
 void Flap_Control_Logic_Motor4(int16_t base_speed);
+static void SyncPid_Reset(SyncPid_t *pid);
+static void UpdateStandWingControl(void);
+static int16_t CalcStandWingSpeed(float hall_value, float target_value, int8_t hall_polarity);
+static void UpdateFlapSyncSpeed(int16_t base_speed, int16_t *speed_m1, int16_t *speed_m4);
 void ReadSensors(void);
 /* USER CODE END PFP */
 
@@ -157,6 +195,10 @@ int main(void)
   /* 初始化电机控制参数 */
   k_comp=(hall_threshold_high-hall_threshold_low)*0.4*0.5/1000.0f ;
   k_comp_m4=(hall_threshold_high_m4-hall_threshold_low_m4)*0.4*0.5/1000.0f ;
+
+  /* 根据上电时霍尔位置初始化两个翅膀的拍动方向 */
+  ReadSensors();
+  InitFlapStates();
   
   /* USER CODE END 2 */
 
@@ -169,14 +211,28 @@ int main(void)
     /* USER CODE BEGIN 3 */
     ReadSensors();
     
+    if (crsf_data.F == 1) {
+      if (stand_wing_mode_active == 0) {
+        stand_wing_mode_active = 1;
+        SyncPid_Reset(&flap_sync_pid);
+      }
+      UpdateStandWingControl();
+    } else {
+      if (stand_wing_mode_active == 1) {
+        stand_wing_mode_active = 0;
+        InitFlapStates();
+      }
+
       /* 基于霍尔传感器值的扑翼控制 */
-    /* 当霍尔传感器值在低位死区上限和高位死区下限之间时，电机正转 */
-    /* 当霍尔传感器值低于低位阈值或高于高位阈值时，电机反转 */
-    /* 当霍尔传感器值在死区范围内时，保持当前方向不变 */
-    /* 速度由摇杆控制 */
-    int16_t base_speed = (int16_t)(crsf_data.Left_Y * 10.0f);
-    Flap_Control_Logic(base_speed);
-    Flap_Control_Logic_Motor4(base_speed);
+      /* 当霍尔传感器值在低位死区上限和高位死区下限之间时，电机正转 */
+      /* 当霍尔传感器值低于低位阈值或高于高位阈值时，电机反转 */
+      /* 当霍尔传感器值在死区范围内时，保持当前方向不变 */
+      /* 速度由摇杆控制 */
+      int16_t base_speed = (int16_t)(crsf_data.Left_Y * 10.0f);
+      UpdateFlapSyncSpeed(base_speed, &sync_speed_motor1, &sync_speed_motor4);
+      Flap_Control_Logic(sync_speed_motor1);
+      Flap_Control_Logic_Motor4(sync_speed_motor4);
+    }
     /* 发送摇杆数据到USART1 */
     SendJoystickData();
     /* 延时1ms，控制频率约200Hz */
@@ -292,11 +348,192 @@ void SendJoystickData(void)
           batteryVoltage, debug_adc_value,
           hallSensorValue, debug_hall_adc_value,
           hallSensorValue2, debug_hall_adc_value2,
-          0.0f, 0.0f, 0.0f,
+          sync_phase_error, wing_phase_left, wing_phase_right,
           current_state, current_state_m4);
   
   /* 使用非阻塞方式发送数据，设置较短的超时时间 */
   HAL_UART_Transmit(&huart1, (uint8_t*)buffer, strlen(buffer), 10);
+}
+
+static float ClampFloat(float value, float min_value, float max_value)
+{
+    if (value < min_value) {
+        return min_value;
+    }
+    if (value > max_value) {
+        return max_value;
+    }
+    return value;
+}
+
+static int16_t ClampMotorSpeed(int32_t speed)
+{
+    if (speed < 0) {
+        return 0;
+    }
+    if (speed > 1000) {
+        return 1000;
+    }
+    return (int16_t)speed;
+}
+
+static int16_t ClampSignedMotorSpeed(int32_t speed)
+{
+    if (speed < -1000) {
+        return -1000;
+    }
+    if (speed > 1000) {
+        return 1000;
+    }
+    return (int16_t)speed;
+}
+
+static float WrapPhaseError(float error)
+{
+    if (error > 0.5f) {
+        return error - 1.0f;
+    }
+    if (error < -0.5f) {
+        return error + 1.0f;
+    }
+    return error;
+}
+
+static float WrapPhase01(float phase)
+{
+    if (phase >= 1.0f) {
+        return phase - 1.0f;
+    }
+    if (phase < 0.0f) {
+        return phase + 1.0f;
+    }
+    return phase;
+}
+
+static void SyncPid_Reset(SyncPid_t *pid)
+{
+    pid->integral = 0.0f;
+    pid->prev_error = 0.0f;
+}
+
+static float SyncPid_Update(SyncPid_t *pid, float error)
+{
+    float derivative = error - pid->prev_error;
+
+    pid->integral += error;
+    pid->integral = ClampFloat(pid->integral, -pid->integral_limit, pid->integral_limit);
+
+    pid->prev_error = error;
+
+    return ClampFloat((pid->kp * error) + (pid->ki * pid->integral) + (pid->kd * derivative),
+                      -pid->output_limit,
+                      pid->output_limit);
+}
+
+static float GetWingPhase(float hall_value, float threshold_low, float threshold_high, FlapState_t state)
+{
+    float span = threshold_high - threshold_low;
+    float normalized;
+
+    if (span <= 0.01f) {
+        return 0.0f;
+    }
+
+    normalized = ClampFloat((hall_value - threshold_low) / span, 0.0f, 1.0f);
+
+    if (state == FLAP_UP) {
+        return normalized * 0.5f;
+    }
+
+    return 0.5f + ((1.0f - normalized) * 0.5f);
+}
+
+static void InitFlapStates(void)
+{
+    float hall_mid = (hall_threshold_low + hall_threshold_high) * 0.5f;
+    float hall_mid_m4 = (hall_threshold_low_m4 + hall_threshold_high_m4) * 0.5f;
+
+    current_state = (hallSensorValue >= hall_mid) ? FLAP_DOWN : FLAP_UP;
+    current_state_m4 = (hallSensorValue2 >= hall_mid_m4) ? FLAP_DOWN : FLAP_UP;
+
+    SyncPid_Reset(&flap_sync_pid);
+}
+
+static int16_t CalcStandWingSpeed(float hall_value, float target_value, int8_t hall_polarity)
+{
+    float error = target_value - hall_value;
+    float abs_error = (error >= 0.0f) ? error : -error;
+    int32_t command;
+
+    if (abs_error <= stand_wing_deadband) {
+        return 0;
+    }
+
+    command = (int32_t)(error * stand_wing_kp);
+
+    if (command > 0 && command < stand_wing_min_speed) {
+        command = stand_wing_min_speed;
+    } else if (command < 0 && command > -stand_wing_min_speed) {
+        command = -stand_wing_min_speed;
+    }
+
+    if (command > stand_wing_max_speed) {
+        command = stand_wing_max_speed;
+    } else if (command < -stand_wing_max_speed) {
+        command = -stand_wing_max_speed;
+    }
+
+    return ClampSignedMotorSpeed((int32_t)hall_polarity * command);
+}
+
+static void UpdateStandWingControl(void)
+{
+    int16_t speed_m1 = CalcStandWingSpeed(hallSensorValue, stand_wing_target_m1, 1);
+    int16_t speed_m4 = CalcStandWingSpeed(hallSensorValue2, stand_wing_target_m4, -1);
+
+    sync_phase_error = 0.0f;
+    sync_pid_output = 0.0f;
+    wing_phase_left = GetWingPhase(hallSensorValue, hall_threshold_low, hall_threshold_high, current_state);
+    wing_phase_right = GetWingPhase(hallSensorValue2, hall_threshold_low_m4, hall_threshold_high_m4, current_state_m4);
+
+    Motor_SetSpeed(MOTOR_1, speed_m1);
+    Motor_SetSpeed(MOTOR_4, speed_m4);
+}
+
+static void UpdateFlapSyncSpeed(int16_t base_speed, int16_t *speed_m1, int16_t *speed_m4)
+{
+    const int16_t sync_enable_speed = 80;
+    const float sync_deadband = 0.01f;
+    int16_t speed_abs = (base_speed >= 0) ? base_speed : (int16_t)(-base_speed);
+    float abs_phase_error;
+    float target_right_phase;
+
+    wing_phase_left = GetWingPhase(hallSensorValue, hall_threshold_low, hall_threshold_high, current_state);
+    wing_phase_right = GetWingPhase(hallSensorValue2, hall_threshold_low_m4, hall_threshold_high_m4, current_state_m4);
+
+    if (speed_abs < sync_enable_speed) {
+        SyncPid_Reset(&flap_sync_pid);
+        sync_phase_error = 0.0f;
+        sync_pid_output = 0.0f;
+        *speed_m1 = speed_abs;
+        *speed_m4 = speed_abs;
+        return;
+    }
+
+    /* 蝴蝶双翼需要反相同步：右翼目标相位始终比左翼超前半个周期。 */
+    target_right_phase = WrapPhase01(wing_phase_left + 0.5f);
+    sync_phase_error = WrapPhaseError(target_right_phase - wing_phase_right);
+    abs_phase_error = (sync_phase_error >= 0.0f) ? sync_phase_error : -sync_phase_error;
+
+    if (abs_phase_error < sync_deadband) {
+        sync_phase_error = 0.0f;
+    }
+
+    sync_pid_output = SyncPid_Update(&flap_sync_pid, sync_phase_error);
+
+    /* 误差为正说明右翼落后于反相目标，需要加快右翼并稍微减慢左翼。 */
+    *speed_m1 = ClampMotorSpeed((int32_t)speed_abs - (int32_t)sync_pid_output);
+    *speed_m4 = ClampMotorSpeed((int32_t)speed_abs + (int32_t)sync_pid_output);
 }
 
 void Flap_Control_Logic(int16_t speed)
