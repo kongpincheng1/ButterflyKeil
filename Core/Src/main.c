@@ -97,8 +97,8 @@ static FlapState_t current_state = FLAP_UP;
 static FlapState_t current_state_m4 = FLAP_DOWN;
 float k_comp;
 float k_comp_m4;
-float stand_wing_target_m1 = 1.70f;      /* 立翅目标霍尔电压，可按实测调整 */
-float stand_wing_target_m4 = 1.80f;      /* 立翅目标霍尔电压，可按实测调整 */
+float stand_wing_target_m1 = 2.20f;      /* 立翅目标霍尔电压，可按实测调整 */
+float stand_wing_target_m4 = 1.00f;      /* 立翅目标霍尔电压，可按实测调整 */
 float stand_wing_deadband = 0.03f;       /* 立翅保持死区 */
 float stand_wing_kp = 1800.0f;           /* 立翅位置控制比例系数 */
 int16_t stand_wing_min_speed = 120;      /* 立翅最小驱动速度，克服静摩擦 */
