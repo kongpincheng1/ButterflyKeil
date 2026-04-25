@@ -110,6 +110,7 @@ static float wing_phase_left = 0.0f;
 static float wing_phase_right = 0.0f;
 static int16_t sync_speed_motor1 = 0;
 static int16_t sync_speed_motor4 = 0;
+static uint32_t crsf_rx_recover_tick = 0;
 
 static SyncPid_t flap_sync_pid = {
     .kp = 420.0f,
@@ -209,6 +210,13 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+    if ((HAL_GetTick() - CRSF_GetLastRxTick()) > 500U &&
+        (HAL_GetTick() - crsf_rx_recover_tick) > 200U)
+    {
+      CRSF_RestartRx();
+      crsf_rx_recover_tick = HAL_GetTick();
+    }
+
     ReadSensors();
     
     if (crsf_data.F == 1) {

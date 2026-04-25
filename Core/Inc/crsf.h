@@ -100,6 +100,8 @@ typedef struct
 extern CRSF_Data crsf_data;
 
 void CRSF_Init(void);
+void CRSF_RestartRx(void);
 void CRSF_UART_RxCallback(uint16_t Size);
+uint32_t CRSF_GetLastRxTick(void);
 
 #endif

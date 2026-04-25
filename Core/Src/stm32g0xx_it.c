@@ -187,4 +187,17 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
   }
 }
 
+/**
+  * @brief  UART错误回调函数
+  * @param  huart: UART句柄指针
+  * @retval None
+  */
+void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
+{
+  if (huart->Instance == USART1)
+  {
+    CRSF_RestartRx();
+  }
+}
+
 /* USER CODE END 1 */

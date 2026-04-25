@@ -5,6 +5,7 @@
 extern DMA_HandleTypeDef hdma_usart1_rx;
 
 uint8_t crsf_data_temp[36] = {0};
+static volatile uint32_t crsf_last_rx_tick = 0;
 
 CRSF_Data crsf_data;
 
@@ -82,17 +83,32 @@ float CRSF_FloatMapWithMedian(float input_value, float input_min, float input_ma
 
 void CRSF_Init(void)
 {
+    CRSF_RestartRx();
+}
+
+void CRSF_RestartRx(void)
+{
+    HAL_UART_DMAStop(&huart1);
+    HAL_UART_AbortReceive(&huart1);
+    memset(crsf_data_temp, 0, sizeof(crsf_data_temp));
     HAL_UARTEx_ReceiveToIdle_DMA(&huart1, crsf_data_temp, MAX_FRAME_SIZE);
     __HAL_DMA_DISABLE_IT(&hdma_usart1_rx, DMA_IT_HT);
 }
 
+uint32_t CRSF_GetLastRxTick(void)
+{
+    return crsf_last_rx_tick;
+}
+
 void CRSF_UART_RxCallback(uint16_t Size)
 {
+    crsf_last_rx_tick = HAL_GetTick();
+
     // 最小帧长度检查：地址(1) + 长度(1) + 类型(1) + CRC(1) = 4字节
     if (Size < 4)
     {
         memset(crsf_data_temp, 0, sizeof(crsf_data_temp));
-        CRSF_Init();
+        CRSF_RestartRx();
         return;
     }
 
@@ -101,7 +117,7 @@ void CRSF_UART_RxCallback(uint16_t Size)
         crsf_data_temp[0] != CRSF_ADDRESS_BROADCAST)
     {
         memset(crsf_data_temp, 0, sizeof(crsf_data_temp));
-        CRSF_Init();
+        CRSF_RestartRx();
         return;
     }
 
@@ -113,7 +129,7 @@ void CRSF_UART_RxCallback(uint16_t Size)
     if (declared_len < 2 || declared_len > (MAX_FRAME_SIZE - 2))
     {
         memset(crsf_data_temp, 0, sizeof(crsf_data_temp));
-        CRSF_Init();
+        CRSF_RestartRx();
         return;
     }
 
@@ -121,7 +137,7 @@ void CRSF_UART_RxCallback(uint16_t Size)
     if (Size != (uint16_t)(declared_len + 2))
     {
         memset(crsf_data_temp, 0, sizeof(crsf_data_temp));
-        CRSF_Init();
+        CRSF_RestartRx();
         return;
     }
 
@@ -133,7 +149,7 @@ void CRSF_UART_RxCallback(uint16_t Size)
     if (calc_crc != recv_crc)
     {
         memset(crsf_data_temp, 0, sizeof(crsf_data_temp));
-        CRSF_Init();
+        CRSF_RestartRx();
         return;
     }
 
@@ -220,5 +236,5 @@ void CRSF_UART_RxCallback(uint16_t Size)
     }
 
     memset(crsf_data_temp, 0, sizeof(crsf_data_temp));
-    CRSF_Init();
+    CRSF_RestartRx();
 }
