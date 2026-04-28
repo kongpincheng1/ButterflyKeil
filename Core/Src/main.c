@@ -76,6 +76,10 @@ float hall_threshold_high = 2.2f;   /* 高位阈值（V） */
 /* 电机4霍尔传感器参数 - 独立配置 */
 float hall_threshold_low_m4 = 1.3f;    /* 电机4低位阈值（V） */
 float hall_threshold_high_m4 = 2.3f;   /* 电机4高位阈值（V） */
+float turn_deadband = 8.0f;            /* 右摇杆转弯死区 */
+float turn_amplitude_gain = 0.35f;     /* 最大转弯时的振幅差动比例 */
+float turn_amplitude_min_scale = 0.65f;
+float turn_amplitude_max_scale = 1.35f;
 
 /* 定义运行状态 */
 typedef enum {
@@ -95,8 +99,6 @@ typedef struct {
 
 static FlapState_t current_state = FLAP_UP;
 static FlapState_t current_state_m4 = FLAP_DOWN;
-float k_comp;
-float k_comp_m4;
 float stand_wing_target_m1 = 2.20f;      /* 立翅目标霍尔电压，可按实测调整 */
 float stand_wing_target_m4 = 1.00f;      /* 立翅目标霍尔电压，可按实测调整 */
 float stand_wing_deadband = 0.03f;       /* 立翅保持死区 */
@@ -111,6 +113,15 @@ static float wing_phase_right = 0.0f;
 static int16_t sync_speed_motor1 = 0;
 static int16_t sync_speed_motor4 = 0;
 static uint32_t crsf_rx_recover_tick = 0;
+static float turn_mix = 0.0f;
+static float wing_amplitude_scale_left = 1.0f;
+static float wing_amplitude_scale_right = 1.0f;
+static float flap_threshold_low_m1 = 1.2f;
+static float flap_threshold_high_m1 = 2.2f;
+static float flap_threshold_low_m4 = 1.3f;
+static float flap_threshold_high_m4 = 2.3f;
+static float flap_k_comp_m1 = 0.0f;
+static float flap_k_comp_m4 = 0.0f;
 
 static SyncPid_t flap_sync_pid = {
     .kp = 420.0f,
@@ -131,6 +142,9 @@ static void InitFlapStates(void);
 void Flap_Control_Logic(int16_t base_speed);
 void Flap_Control_Logic_Motor4(int16_t base_speed);
 static void SyncPid_Reset(SyncPid_t *pid);
+static void UpdateTurnAmplitudeTargets(void);
+static void UpdateWingThresholdWindow(float base_low, float base_high, float amplitude_scale,
+                                      float *target_low, float *target_high, float *target_k_comp);
 static void UpdateStandWingControl(void);
 static int16_t CalcStandWingSpeed(float hall_value, float target_value, int8_t hall_polarity);
 static void UpdateFlapSyncSpeed(int16_t base_speed, int16_t *speed_m1, int16_t *speed_m4);
@@ -193,12 +207,9 @@ int main(void)
   /* 点亮LED指示灯，表示系统初始化完成 */
   LED_ON();
   
-  /* 初始化电机控制参数 */
-  k_comp=(hall_threshold_high-hall_threshold_low)*0.4*0.5/1000.0f ;
-  k_comp_m4=(hall_threshold_high_m4-hall_threshold_low_m4)*0.4*0.5/1000.0f ;
-
   /* 根据上电时霍尔位置初始化两个翅膀的拍动方向 */
   ReadSensors();
+  UpdateTurnAmplitudeTargets();
   InitFlapStates();
   
   /* USER CODE END 2 */
@@ -218,6 +229,7 @@ int main(void)
     }
 
     ReadSensors();
+    UpdateTurnAmplitudeTargets();
     
     if (crsf_data.F == 1) {
       if (stand_wing_mode_active == 0) {
@@ -456,10 +468,49 @@ static float GetWingPhase(float hall_value, float threshold_low, float threshold
     return 0.5f + ((1.0f - normalized) * 0.5f);
 }
 
+static void UpdateWingThresholdWindow(float base_low, float base_high, float amplitude_scale,
+                                      float *target_low, float *target_high, float *target_k_comp)
+{
+    float center = (base_low + base_high) * 0.5f;
+    float span = (base_high - base_low) * amplitude_scale;
+    float half_span;
+
+    span = ClampFloat(span, 0.20f, 3.00f);
+    half_span = span * 0.5f;
+
+    *target_low = ClampFloat(center - half_span, 0.05f, 3.20f);
+    *target_high = ClampFloat(center + half_span, 0.10f, 3.25f);
+    *target_k_comp = span * 0.4f * 0.5f / 1000.0f;
+}
+
+static void UpdateTurnAmplitudeTargets(void)
+{
+    float turn_input = ClampFloat(crsf_data.Right_X, -100.0f, 100.0f);
+
+    if (turn_input > -turn_deadband && turn_input < turn_deadband) {
+        turn_input = 0.0f;
+    }
+
+    turn_mix = turn_input / 100.0f;
+
+    /* 右摇杆向右时默认左翼增幅、右翼减幅；向左则相反。 */
+    wing_amplitude_scale_left = ClampFloat(1.0f + (turn_mix * turn_amplitude_gain),
+                                           turn_amplitude_min_scale,
+                                           turn_amplitude_max_scale);
+    wing_amplitude_scale_right = ClampFloat(1.0f - (turn_mix * turn_amplitude_gain),
+                                            turn_amplitude_min_scale,
+                                            turn_amplitude_max_scale);
+
+    UpdateWingThresholdWindow(hall_threshold_low, hall_threshold_high, wing_amplitude_scale_left,
+                              &flap_threshold_low_m1, &flap_threshold_high_m1, &flap_k_comp_m1);
+    UpdateWingThresholdWindow(hall_threshold_low_m4, hall_threshold_high_m4, wing_amplitude_scale_right,
+                              &flap_threshold_low_m4, &flap_threshold_high_m4, &flap_k_comp_m4);
+}
+
 static void InitFlapStates(void)
 {
-    float hall_mid = (hall_threshold_low + hall_threshold_high) * 0.5f;
-    float hall_mid_m4 = (hall_threshold_low_m4 + hall_threshold_high_m4) * 0.5f;
+    float hall_mid = (flap_threshold_low_m1 + flap_threshold_high_m1) * 0.5f;
+    float hall_mid_m4 = (flap_threshold_low_m4 + flap_threshold_high_m4) * 0.5f;
 
     current_state = (hallSensorValue >= hall_mid) ? FLAP_DOWN : FLAP_UP;
     current_state_m4 = (hallSensorValue2 >= hall_mid_m4) ? FLAP_DOWN : FLAP_UP;
@@ -501,8 +552,8 @@ static void UpdateStandWingControl(void)
 
     sync_phase_error = 0.0f;
     sync_pid_output = 0.0f;
-    wing_phase_left = GetWingPhase(hallSensorValue, hall_threshold_low, hall_threshold_high, current_state);
-    wing_phase_right = GetWingPhase(hallSensorValue2, hall_threshold_low_m4, hall_threshold_high_m4, current_state_m4);
+    wing_phase_left = GetWingPhase(hallSensorValue, flap_threshold_low_m1, flap_threshold_high_m1, current_state);
+    wing_phase_right = GetWingPhase(hallSensorValue2, flap_threshold_low_m4, flap_threshold_high_m4, current_state_m4);
 
     Motor_SetSpeed(MOTOR_1, speed_m1);
     Motor_SetSpeed(MOTOR_4, speed_m4);
@@ -516,8 +567,8 @@ static void UpdateFlapSyncSpeed(int16_t base_speed, int16_t *speed_m1, int16_t *
     float abs_phase_error;
     float target_right_phase;
 
-    wing_phase_left = GetWingPhase(hallSensorValue, hall_threshold_low, hall_threshold_high, current_state);
-    wing_phase_right = GetWingPhase(hallSensorValue2, hall_threshold_low_m4, hall_threshold_high_m4, current_state_m4);
+    wing_phase_left = GetWingPhase(hallSensorValue, flap_threshold_low_m1, flap_threshold_high_m1, current_state);
+    wing_phase_right = GetWingPhase(hallSensorValue2, flap_threshold_low_m4, flap_threshold_high_m4, current_state_m4);
 
     if (speed_abs < sync_enable_speed) {
         SyncPid_Reset(&flap_sync_pid);
@@ -553,9 +604,8 @@ void Flap_Control_Logic(int16_t speed)
     uint16_t abs_speed = (speed > 0) ? speed : -speed;
 
     // 2. 计算动态阈值 (线性缩减边界)
-    // 假设 speed 最大为 1000，k_comp 为 0.0005，则最大偏移量为 0.5V
-    float dyn_threshold_high = hall_threshold_high - (k_comp * (float)abs_speed);
-    float dyn_threshold_low = hall_threshold_low + (k_comp * (float)abs_speed);
+    float dyn_threshold_high = flap_threshold_high_m1 - (flap_k_comp_m1 * (float)abs_speed);
+    float dyn_threshold_low = flap_threshold_low_m1 + (flap_k_comp_m1 * (float)abs_speed);
 
 
     switch (current_state)
@@ -597,8 +647,8 @@ void Flap_Control_Logic_Motor4(int16_t speed)
 
     uint16_t abs_speed_m4 = (speed > 0) ? speed : -speed;
 
-    float dyn_threshold_high_m4 = hall_threshold_high_m4 - (k_comp_m4 * (float)abs_speed_m4);
-    float dyn_threshold_low_m4 = hall_threshold_low_m4 + (k_comp_m4 * (float)abs_speed_m4);
+    float dyn_threshold_high_m4 = flap_threshold_high_m4 - (flap_k_comp_m4 * (float)abs_speed_m4);
+    float dyn_threshold_low_m4 = flap_threshold_low_m4 + (flap_k_comp_m4 * (float)abs_speed_m4);
 
 
     switch (current_state_m4)
