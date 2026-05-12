@@ -70,12 +70,12 @@ int hall_count = 0;
 float hall_avg_total = 0.0f;
 
 /* 电机控制参数 - 可配置 */
-float hall_threshold_low = 1.2f;    /* 低位阈值（V） */
-float hall_threshold_high = 2.2f;   /* 高位阈值（V） */
+float hall_threshold_low = 1.6f;    /* 低位阈值（V） */
+float hall_threshold_high = 2.6f;   /* 高位阈值（V） */
 
 /* 电机4霍尔传感器参数 - 独立配置 */
-float hall_threshold_low_m4 = 1.3f;    /* 电机4低位阈值（V） */
-float hall_threshold_high_m4 = 2.3f;   /* 电机4高位阈值（V） */
+float hall_threshold_low_m4 = 1.5f;    /* 电机4低位阈值（V） */
+float hall_threshold_high_m4 = 2.5f;   /* 电机4高位阈值（V） */
 
 /* 定义运行状态 */
 typedef enum {
@@ -97,8 +97,8 @@ static FlapState_t current_state = FLAP_UP;
 static FlapState_t current_state_m4 = FLAP_DOWN;
 float k_comp;
 float k_comp_m4;
-float stand_wing_target_m1 = 2.20f;      /* 立翅目标霍尔电压，可按实测调整 */
-float stand_wing_target_m4 = 1.00f;      /* 立翅目标霍尔电压，可按实测调整 */
+float stand_wing_target_m1 = 2.90f;      /* 立翅目标霍尔电压，可按实测调整 */
+float stand_wing_target_m4 = 1.20f;      /* 立翅目标霍尔电压，可按实测调整 */
 float stand_wing_deadband = 0.03f;       /* 立翅保持死区 */
 float stand_wing_kp = 1800.0f;           /* 立翅位置控制比例系数 */
 int16_t stand_wing_min_speed = 120;      /* 立翅最小驱动速度，克服静摩擦 */
